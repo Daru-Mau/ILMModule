@@ -1,0 +1,990 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx} 
+\usepackage{import}
+\usepackage{imakeidx} 
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{pdfpages}
+\usepackage{array}
+\usepackage{float} 
+\usepackage{multicol}
+\usepackage{listings} 
+\usepackage{url}
+\usepackage{natbib}
+\usepackage{csquotes}
+\usepackage{caption}
+\usepackage{xcolor}   
+\usepackage{geometry}
+
+\geometry{top=25mm, bottom=25mm, left=20mm, right=20mm}
+\setlength{\parindent}{0pt}
+\renewcommand\contentsname{Index}
+
+\begin{document}
+
+\newpage
+\clearpage
+\import{./}{cover.tex}
+\tableofcontents
+
+\newpage
+\section{Introduction}
+
+As artificial intelligence continues to evolve, so too does the field of robotics, where machines not only think but also move, respond, and even emote. A growing subfield within this domain is that of \textit{social robots}---machines designed to interact with humans on a social level. These robots are increasingly taking on human-like forms, raising fundamental questions: Why must robots resemble us? Are we designing machines to mirror ourselves, or reshaping ourselves in their image?
+
+\subsection{The Case for Humanlike Robots}
+
+Social robots are distinct from industrial or task-specific robots. Their primary function is relational, not mechanical. Examples like Pepper \citep{pepperSoftbank} and Paro \citep{paro2003} illustrate how humanoid or animal-like forms are used to encourage emotional connection. This trend toward anthropomorphism reflects both a technological goal and a psychological strategy: humans are more likely to empathize with entities that resemble themselves \citep{dautenhahn2007}.
+
+\subsection{Embodiment and Philosophical Underpinnings}
+
+To understand the human-like design of robots, we must consider the philosophy of \textit{embodiment}. Philosophers like Merleau-Ponty and Johnson argue that intelligence and emotion are not purely cognitive but emerge through bodily experience \citep{merleau1962, johnson2007}.
+Giving robots human bodies is not only about appearance—it is about replicating how humans experience the world through posture, gesture, and physical presence.
+
+\subsection{The Uncanny Valley and Ethical Concerns}
+
+The uncanny valley, a concept introduced by Masahiro Mori \citep{mori2012uncanny}, describes the discomfort people feel when a robot is almost—but not quite—human. Philosopher Sherry Turkle warns of the ethical risks of emotionally evocative robots that simulate empathy but do not truly feel \citep{turkle2011}. These “relational artifacts” may undermine authentic human connection by replacing mutual recognition with simulation.
+
+\subsection{Non-Humanoid Social Robots}
+
+Not all social robots are designed to resemble humans. Robots like Jibo and Kuri rely on motion, sound, and timing to express sociality \citep{jibo, kuri}. These robots show that social interaction can emerge from patterns of responsiveness rather than anatomy. This approach aligns with Levinas’ view that ethical relations stem from otherness, not similarity \citep{levinas1969}. A robot that looks alien may foster more honest interactions by avoiding deceptive familiarity.
+
+\subsection{Symbolism Over Mimicry}
+
+Non-humanoid robots draw on abstraction, using animation, light, and sound to evoke emotions. Rather than mimicking humans, they invite interpretive engagement—similar to how art, dance, or music operates. In this model, social interaction becomes metaphorical, poetic, and symbolic rather than literal.
+
+\subsection{Embodiment Beyond the Human Form}
+
+Embodiment, in robotic terms, is about meaningful physical interaction. A robot need not have a human body to be embodied. What matters is the feedback loop between perception and action \citep{dreyfus2002}. Social intelligence arises from engagement, not appearance.
+
+\subsection{Course Project: Social Robot Design at Politecnico di Milano}
+
+This paper draws on a practical design experience from the \textit{Robotics \& Design} course at Politecnico di Milano, taught by Professors Andrea Bonarini and Romero Maximiliano Ernesto. The class was divided into two teams: Indoor and Outdoor robot development. Each team was further subdivided. This paper focuses on the \textit{Localization Module}, which dealt with robot mobility and spatial awareness.
+Their work illustrates how embodiment and social function are deeply intertwined—not only in theory, but in engineering practice.
+
+\subsection{Conclusion}
+
+Humanoid social robots attempt to simulate human interaction, but often blur the line between simulation and reality. Non-humanoid robots challenge anthropocentric design and promote more ethical, imaginative forms of engagement. As robots become companions, coworkers, and caregivers, their form is not just a design choice—it is a philosophical one.
+
+\subsection*{References}
+\bibliographystyle{plainnat}
+\bibliography{socialrobots}
+
+\newpage
+\section{Functionalities}
+\subsection{Module Functionalities}
+\subsection{Flowcharts}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.35\linewidth]{photos/flowchart.jpeg}
+\end{figure}
+
+
+\newpage
+\section{Omnidirectional robot: the idea behind} %Pros and cons, omniwheel logic and mechanics
+An \textbf{omnidirectional robot} is a mobile robotic platform capable of independent translation along both the $x$ and $y$ axes and rotation about the vertical $z$ axis. This configuration allows for full planar mobility, enabling the robot to move in any direction without reorientation. Such robots are said to exhibit \textit{holonomic motion}, as they possess as many controllable degrees of freedom (DOF) as they have mobility constraints (3 DOF: $v_x$, $v_y$, and $\omega_z$).
+
+\subsection{Omniwheel Configuration}
+
+The key component enabling this kind of motion is the \textbf{omniwheel}—a wheel fitted with passive rollers around its circumference. These rollers are typically mounted at $90^\circ$ to the wheel's primary rotation plane, allowing the wheel to roll forward while permitting lateral movement.
+
+In this section, we analyze a robot with a symmetric three-wheel omniwheel configuration, where the wheels are placed $120^\circ$ apart on an equilateral triangular chassis.
+
+\subsection{Kinematic Modeling}
+
+Let:
+\begin{itemize}
+    \item $r$ be the radius of each wheel.
+    \item $R$ be the distance from the robot's center to each wheel.
+    \item $\omega_i$ be the angular velocity of wheel $i$.
+    \item $v_x, v_y$ be the robot's linear velocities in the body frame.
+    \item $\omega_z$ be the angular (rotational) velocity of the robot.
+\end{itemize}
+
+\subsubsection{Forward Kinematics}
+
+The relationship between the robot’s velocity vector and the individual wheel velocities is expressed as:
+
+\[
+\begin{bmatrix}
+\omega_1 \\
+\omega_2 \\
+\omega_3
+\end{bmatrix}
+= \frac{1}{r}
+\begin{bmatrix}
+-\sin(\alpha_1) & \cos(\alpha_1) & R \\
+-\sin(\alpha_2) & \cos(\alpha_2) & R \\
+-\sin(\alpha_3) & \cos(\alpha_3) & R \\
+\end{bmatrix}
+\begin{bmatrix}
+v_x \\
+v_y \\
+\omega_z
+\end{bmatrix}
+\]
+
+For a symmetric configuration, the wheel placement angles are:
+\[
+\alpha_1 = 0^\circ, \quad \alpha_2 = 120^\circ, \quad \alpha_3 = 240^\circ
+\]
+
+Thus, the configuration matrix becomes:
+
+\[
+A =
+\begin{bmatrix}
+0 & 1 & R \\
+-\frac{\sqrt{3}}{2} & -\frac{1}{2} & R \\
+\frac{\sqrt{3}}{2} & -\frac{1}{2} & R \\
+\end{bmatrix}
+\]
+
+Therefore, the wheel velocities are:
+
+\[
+\vec{\omega} = \frac{1}{r} A
+\begin{bmatrix}
+v_x \\
+v_y \\
+\omega_z
+\end{bmatrix}
+\]
+
+\subsubsection{Inverse Kinematics}
+
+Given the wheel angular velocities $\omega_1, \omega_2, \omega_3$, the robot’s motion in the body frame can be retrieved using:
+
+\[
+\begin{bmatrix}
+v_x \\
+v_y \\
+\omega_z
+\end{bmatrix}
+= r A^+ 
+\begin{bmatrix}
+\omega_1 \\
+\omega_2 \\
+\omega_3
+\end{bmatrix}
+\]
+
+where $A^+$ is the Moore–Penrose pseudoinverse of matrix $A$.
+
+\subsection{Mechanical Considerations}
+
+\subsubsection{Load and Stability}
+
+The chassis is typically triangular or circular, ensuring symmetric load distribution. The robot’s center of mass (COM) should ideally be centered with respect to the wheelbase to prevent slipping or tipping, particularly during acceleration or rotation. This topic will be further explored in the following section, where the shape will be discuss and the design choiches explained.
+
+\subsubsection{Traction and Friction}
+
+Each omniwheel translates drive torque in its rolling direction while passively allowing orthogonal motion via its rollers. The use of omniwheels eliminates lateral traction constraints, although it may introduce some slip during rapid maneuvers or uneven loading.
+
+\subsubsection{Torque Requirements}
+
+Assuming a robot mass $m$ and target linear acceleration $a$, the required torque per motor is approximately:
+
+\[
+\tau = \frac{m a r}{3}
+\]
+
+This assumes equal load sharing and negligible frictional losses. Further and specific calculus will be given and formulated in the section related to Engine and mechanics, where also the engine functions will be introduced.
+
+\subsubsection{Encoder-Based Odometry}
+
+Rotary encoders on each motor measure $\omega_i$, enabling estimation of the robot’s pose through dead-reckoning. However, odometric drift accumulates over time, necessitating external correction methods such as vision-based localization or SLAM.
+
+\subsection{Dynamic Model (Optional)}
+
+For dynamic control strategies such as model predictive control (MPC), a dynamic model considering the robot's mass and inertia tensor is needed:
+
+\[
+M \cdot \ddot{\mathbf{q}} = J^T \cdot \mathbf{F}
+\]
+
+Where:
+\begin{itemize}
+    \item $M$ is the mass/inertia matrix.
+    \item $J$ is the Jacobian relating wheel velocities to robot motion.
+    \item $\mathbf{F}$ is the vector of wheel forces.
+    \item $\ddot{\mathbf{q}} = [\ddot{x}, \ddot{y}, \ddot{\theta}]^T$ is the acceleration vector.
+\end{itemize}
+
+This model enables the computation of required motor torques to follow a specific trajectory, accounting for physical dynamics.
+
+\subsection{Advantages of the 3-Wheel Omni Design}
+
+\begin{itemize}
+    \item Fully holonomic motion using only three motors.
+    \item Mechanically simpler than 4-Mecanum designs.
+    \item Ideal for flat indoor surfaces and lab environments.
+    \item Easier software implementation due to symmetry.
+\end{itemize}
+
+\noindent This configuration is widely used in research platforms, service robots, and competitive robotics where agility and precision are required in confined spaces. 
+
+\subsection{The Omni design: the project and the design drivers}
+\noindent
+\begin{minipage}[t]{0.6\textwidth}
+  \vspace{0pt}
+  \includegraphics[width=\linewidth]{photos/omnirob.png}
+  \captionof{figure}{three-wheel Omnidirectional}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.4\textwidth}
+    \vspace{0pt}
+    In relation to the functionalities defined during our brainstorming sessions, our attention was drawn to a model presented by Professor Bonarini during one of his lectures.
+    The robot, as illustrated in Figure 1, represents an evolution of the synchronous drive system.
+    It employs at least three Swedish wheels, which are capable of both rolling and translating sideways. Each wheel is equipped with an independent motor and is oriented in a different direction.
+    Thanks to this configuration, the robot can rotate while moving, enabling fully omnidirectional motion. \\
+
+    An omnidirectional robot comes with its own set of challenges. After presenting a paperboard prototype, Professor Romero raised concerns about stability and wheel configuration: "Why three wheels? With four, it's more stable." This prompted the team to gather and reflect on the question, considering all potential consequences for the other teams and the project as a whole. An impulsive choice could have compromised the entire effort. \\
+
+    \end{minipage}
+    
+    We initiated a video call with the goal of brainstorming the issue. Pros and cons of the two main configurations were discussed and formalized. Perhaps the most important insight we gained from that conversation was identifying the drivers—the key variables guiding our decisions. These drivers, combined with \textbf{Available Time}, would go on to shape our approach throughout the rest of the project: 
+
+    \begin{enumerate}
+        \item Financial Considerations — It is not appropriate to proceed with purchases based solely on the assumption that individuals will be able to afford them. Such an approach fails to take into account the diverse financial situations of team members and may be perceived as inconsiderate or disrespectful.
+        \item Weight Considerations — Each component contributes not only to the overall weight of the system, but also to its structural integrity and center of gravity. It was therefore crucial to recognize that even minor modifications could significantly affect the overall design, potentially necessitating recalculations and, consequently, the adoption of more powerful motors or alternative components. Such changes could trigger a cascading effect, resulting in a continuous cycle of specification redefinition and system redesign.
+        \item Power Consumption — The energy requirements of each component had to be carefully evaluated in order to ensure overall system efficiency and autonomy. Excessive power consumption could compromise the robot’s operational time, increase the need for larger and heavier batteries, and introduce additional thermal management challenges. As a result, power efficiency became a critical factor influencing both component selection and architectural decisions throughout the design process.
+    \end{enumerate}
+
+    Conclusion: The more precisely a problem is formulated and modeled, the more calculations and simulations can be performed, thus reducing the likelihood of critical errors in the final product. We ultimately chose the three-wheel configuration, considering the low speed required by our robot, the reduced number of motors and sensors (resulting in lower power consumption, weight, and cost), and the design challenge posed by the shape. This decision also encouraged us to think creatively, steering away from the conventional four-wheel vehicle design and distancing ourselves from the idea of a simple toy or child’s car.
+
+\newpage
+\section{Structure design} %and how elechtronics will be divided
+\subsection{Single pieces design}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\linewidth]{technical_drawings/base_robot_tavola.pdf}
+    \caption{Modello assemblato}
+    \label{fig:base_robot_tavola}
+\end{figure}
+
+\newpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\linewidth]{technical_drawings/12_piccolo sopra.pdf}
+    \caption{Superior Base}
+    \label{fig:12_piccolo_sopra}
+\end{figure}
+
+\newpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\linewidth]{technical_drawings/mattone_sopra.pdf}
+    \caption{Support brick}
+    \label{fig:mattone_sopra}
+\end{figure}
+
+\newpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\linewidth]{technical_drawings/colonna.pdf}
+    \caption{Support column}
+    \label{fig:colonna}
+\end{figure}
+
+\newpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\linewidth]{technical_drawings/12_grande.pdf}
+    \caption{Inter-level Base}
+    \label{fig:12_grande}
+\end{figure}
+
+\newpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\linewidth]{technical_drawings/mattone_sotto.pdf}
+    \caption{Intra-level brick}
+    \label{fig:mattone_sotto}
+\end{figure}
+
+\newpage
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\linewidth]{technical_drawings/12_base.pdf}
+    \caption{Inferior Base}
+    \label{fig:12_base}
+\end{figure}
+
+
+\newpage
+\section{Materials choice}
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{3cm}|p{2.2cm}|p{2.5cm}|p{2cm}|p{5cm}|}
+\hline
+\textbf{Material} & \textbf{Density (kg/m$^3$)} & \textbf{Young's Modulus (GPa)} & \textbf{Cost (\$/kg)} & \textbf{Notes} \\ \hline
+Aluminum 6061       & 2700  & 69   & 3.0    & Lightweight, corrosion resistant \\ \hline
+MDF (Medium Density Fiberboard) & 700   & 4    & 0.5    & Easy to machine, low-cost \\ \hline
+ABS Plastic         & 1050  & 2.1  & 2.5    & Good impact resistance \\ \hline
+Carbon Fiber Reinforced Polymer & 1600  & 70   & 60     & High strength-to-weight ratio \\ \hline
+PLA (Polylactic Acid) & 1240 & 3.5  & 1.8    & 3D printable, biodegradable \\ \hline
+Steel (AISI 1018)   & 7850  & 210  & 0.9    & High strength, heavy \\ \hline
+Titanium Alloy (Ti-6Al-4V) & 4430 & 113 & 30    & Extremely strong, corrosion resistant \\ \hline
+Plywood             & 600   & 10   & 0.4    & Stronger than MDF, lightweight \\ \hline
+Nylon 6             & 1140  & 2.8  & 2.2    & Tough and flexible \\ \hline
+Polycarbonate       & 1200  & 2.4  & 3.0    & High impact resistance, transparent \\ \hline
+\end{tabular}
+\caption{Selected Materials for Robot Construction}
+\label{tab:materials}
+\end{table}
+
+
+\noindent
+In Table~\ref{tab:materials}, we show every possible material taken into consideration for the construction of the robot's structure. Each material is listed along with its density, Young's modulus, and estimated cost per kilogram. The density impacts the overall weight of the robot, influencing both mobility and energy consumption. Young's modulus, a measure of stiffness, indicates how much a material resists deformation under stress: materials with a higher Young's modulus, such as steel or carbon fiber composites, deform very little and are ideal for structural components requiring rigidity. Conversely, materials like MDF or ABS offer easier machining and lower costs at the expense of mechanical strength. The choice of material must balance mechanical properties, ease of manufacturing, and budget constraints, depending on the specific requirements of the robotic application.
+
+
+\newpage
+\section{Engine and mechanics} %Motors, motor drivers, wheels and shaft
+\textbf{Motors, motor drivers, wheels and shafts}
+As previously discussed and presented in the omnidirectional robot section, the required wheels to achieve the full potential of movement are particular. Mecanum wheels or omni wheels are commonly used in such applications. These wheels allow the robot to move not only forward and backward, but also sideways and diagonally, enabling a full range of motion without the need for complex steering mechanisms. Mecanum wheels achieve this by using rollers mounted at a 45-degree angle around the wheel's circumference, whereas omni wheels utilize free-spinning rollers aligned perpendicular to the wheel's rotation. Both designs significantly enhance maneuverability, making them ideal for robotics projects where space constraints, precise movement, and agility are critical factors.
+\\
+
+The choice between mecanum and omni wheels depends on the specific application requirements, including the load capacity, desired speed, and surface conditions. Mecanum wheels are typically preferred for heavier payloads and fully omnidirectional drive systems, while omni wheels are often lighter and simpler, suited for smaller robots or specialized movement configurations.
+\\
+
+\noindent
+\begin{minipage}[t]{0.4\textwidth}
+  \vspace{0pt}
+  \includegraphics[width=0.8\linewidth]{photos/wheel.jpg}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.6\textwidth}
+    \vspace{0pt}
+    Considering the primary driver behind our design decisions — namely, budget constraints — we opted for the omni wheel solution. The specific model selected, with the guidance of Professor Bonarini, features free-spinning rollers mounted on axes. A critical specification of these wheels, which significantly influenced the overall design of the robot, is their maximum load capacity of 15 kg. \\
+
+    The shafts were already included in our selected wheel model, slightly simplifying our work. Although the 15 kg load limitation was initially seen as a drawback, it actually allowed us to breathe a sigh of relief, since until then we had no clear idea of how much weight our motors would need to move. Given that the other modules were developed independently from ours, no one had a precise understanding of the total weight of the final robot, nor of the motor power requirements. Thus, this load capacity specification turned out to be the first of three key parameters that enabled the team to calculate the necessary technical specifications for the motors. \\
+\end{minipage}
+
+So, the maximum robot weight was established at 15 kg, but what about speed and acceleration? Thanks to previous university courses taken during our bachelor's degree, we knew that calculating the required motor specifications would also require defining both the desired speed and acceleration. However, at that stage, everything was still uncertain: the robot's functionalities were not yet fully defined, and we had little information to work with. As a result, we had to remain patient and wait for further developments. Finally, after a backbone meeting, all the different pieces started to come together, allowing us to begin reasoning about possible specifications and move forward with the motor selection process. \\
+
+Considering the main functionalities — namely, staying near the microwave area and interacting with people — our module assumed a rather secondary role within the overall project. The idea of "dancing" following user interaction, autonomously moving to and from the charging station, and detecting occasional obstacles led us to intentionally limit both the "intelligence" of our module and its kinematic performance. There was no need to achieve an acceleration of 1 m/s\textsuperscript{2}; an acceleration of 0.5 m/s\textsuperscript{2} was deemed more than sufficient (and arguably even excessive for our purposes). Similarly, a maximum speed of 1.5 m/s was considered more than adequate, as there was no requirement to keep pace with human users. At this stage, the project was starting to take on a more realistic dimension, pushing us to optimize our design choices in line with the identified drivers and project constraints.
+
+\subsection{DC motors}
+
+DC (Direct Current) motors operate based on the fundamental principle of electromagnetism. The core components and processes involved in the functioning of DC motors can be explained as follows:
+
+\begin{enumerate}
+    \item \textbf{Armature (Rotor)}: The armature is the rotating part of the DC motor, typically a coil wound with wire (usually copper). This part is positioned within a magnetic field and is connected to the motor's shaft.
+    
+    \item \textbf{Stator (Magnetic Field)}: The stator creates a magnetic field in which the armature rotates. This field can be generated using either permanent magnets or electromagnets (field windings). The magnetic field can be constant or varying depending on the motor's design.
+    
+    \item \textbf{Commutator}: The commutator is a rotary switch that reverses the current direction in the armature windings at the correct moments to ensure continuous rotation. It works in tandem with the carbon brushes to maintain a proper current path to the armature.
+    
+    \item \textbf{Brushes}: The brushes, made of carbon or graphite, are in constant contact with the commutator. They provide a conductive path for current to flow into the armature windings during rotation. The brushes are essential for transferring power to the rotating armature.
+    
+    \item \textbf{Power Supply}: The motor operates using a DC power supply that provides a continuous flow of current. The motor's speed is proportional to the supplied voltage, while the torque is determined by the current.
+    
+    \item \textbf{Lorentz Force}: When the current flows through the armature windings within the magnetic field, the interaction between the magnetic field and the current generates a force (according to Lorentz’s law) that causes the armature to rotate. The direction of rotation follows the right-hand rule, where the thumb points in the direction of the current, the fingers in the direction of the magnetic field, and the palm in the direction of the force.
+\end{enumerate}
+
+  \includegraphics[width=.7
+    \linewidth]{photos/dc-motor-diagram.jpg}
+    
+DC motors are frequently chosen for mobile robotic applications, particularly for tasks involving movement and localization. Below are the reasons for their suitability for such tasks:
+
+\begin{enumerate}
+    \item \textbf{Precise Speed and Position Control}: DC motors offer straightforward and continuous speed control. By adjusting the input voltage or using Pulse Width Modulation (PWM), the motor’s speed can be efficiently controlled. Additionally, the use of encoders or tachometers attached to the motor's shaft provides position and velocity feedback, which is essential for precise movement control in robots.
+    
+    \item \textbf{Simplicity and Cost-Effectiveness}: DC motors are simpler in design compared to AC motors or stepper motors, making them cost-effective. The simplicity also leads to easier integration with control systems for robotic movement, which is crucial in social robots designed for cost-effective consumer applications.
+    
+    \item \textbf{High Torque at Low Speeds}: DC motors provide high torque at low speeds, which is crucial for precise movements and overcoming resistances such as friction or obstacles. Social robots require smooth, controlled movement to operate safely and effectively in environments shared with humans.
+    
+    \item \textbf{Compact Design}: DC motors are generally compact and lightweight, making them well-suited for robots that must maintain a small footprint. This is especially important for social robots that are designed to operate in tight spaces, such as homes or offices.
+    
+    \item \textbf{Smooth and Continuous Operation}: DC motors provide smooth and continuous rotation, which is essential for robots that must interact with humans in a non-disruptive manner. Smooth motion is necessary for both navigating environments and interacting with people.
+    
+    \item \textbf{Easy Reversal of Direction}: Changing the direction of motion in a DC motor is straightforward by simply reversing the polarity of the power supply. This ability is critical for localization and navigation tasks where the robot may need to quickly change direction or reorient itself.
+    
+    \item \textbf{Adaptability in Differential Drive Systems}: DC motors are commonly used in differential drive systems, where two wheels are independently driven by separate motors. This configuration allows for agile movement in any direction, a key advantage for robots needing to navigate dynamic environments and avoid obstacles.
+    
+    \item \textbf{Energy Efficiency}: While not the most energy-efficient compared to stepper motors, DC motors can still deliver an adequate level of efficiency when optimized for low power consumption. This makes them suitable for robots that need to operate autonomously for extended periods in environments like homes and offices.
+\end{enumerate}
+
+
+DC motors are ideal for use in the localization and movement modules of social robots due to their simplicity, precision, cost-effectiveness, high torque, and the ability to easily reverse direction. These characteristics enable precise control of the robot's movement, making it suitable for dynamic environments where smooth and controlled motion is critical. With their versatility, DC motors allow for effective interaction and navigation, ensuring that social robots can function efficiently in everyday human environments.
+
+
+\subsection{The math behind}
+
+One major flaw of the omniwheel configuration is that there will never be the situation where all the combined torque will be used. In the 120 degrees configuration, a wheel is always stationary with just the rullers spinning.
+
+\newpage
+\section{Controllers and sensors choice} %digital pin, arduino and elego presentation
+
+\newpage
+\section{The electronic behind} %how the connection works, how the signals works 
+
+\newpage
+\subsection{KiCad schematics}
+\begin{figure}[H]
+    \centering
+    \rotatebox{90}{\includegraphics[width=.99\linewidth]{pfds/IL_schema.pdf}}
+\end{figure}
+
+
+\subsection{I2C for intra-communications} %how communication between modulus works
+
+\newpage
+\section{The software behind} %How the code is injected
+\newpage
+\subsection{HC-SR04 testing} %What we wanted to achieve, perplexities and the code
+The following code represents our initial attempt to test the correct functioning and communication of all initial 6 HC-SR04 ultrasonic sensors. By verifying that each sensor returned a reasonable distance when a hand was placed in front of it, we assumed the sensors to be operational. However, the readings proved somewhat unreliable.
+Considering the potential for inconsistent performance, we evaluated solutions of varying complexity. One straightforward approach would be to program the robot to stop immediately upon detecting a dynamic obstacle in the path of any sensor—ensuring coverage along all edges of the robot's dodecagonal perimeter.
+A more advanced solution involved the integration of a camera system to create a more detailed map of the surrounding environment. While this would significantly improve obstacle detection and navigation, it would also introduce higher costs in terms of both power consumption and hardware. In particular, image processing tasks exceed the computational capabilities of our Elegoo Uno microcontroller. To implement such a system, we would need to upgrade to a more powerful platform, such as a Raspberry Pi or an ESP32, capable of handling the additional processing load.\\
+
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+const int trigPins[6] = {2, 4, 6, 8, 10, 12}; // Trigger pins for 6 sensors
+const int echoPins[6] = {3, 5, 7, 9, 11, 13}; // Echo pins for 6 sensors
+
+long distances[6]; // Array to store distance readings
+
+void setup() {
+  Serial.begin(9600);
+
+  // Initialize pins
+  for (int i = 0; i < 6; i++) {
+    pinMode(trigPins[i], OUTPUT);
+    pinMode(echoPins[i], INPUT);
+  }
+}
+
+void loop() {
+  for (int i = 0; i < 6; i++) {
+    distances[i] = readDistance(trigPins[i], echoPins[i]);
+  }
+
+  for (int i = 0; i < 6; i++) { // Print all distances
+    Serial.print("Sensor");
+    Serial.print(i + 1);
+    Serial.print(":");
+    Serial.print(distances[i]);
+    Serial.println("cm");
+  }
+
+  Serial.println("------------------------");
+  delay(500);  // Wait before next reading
+}
+
+// Function to read distance from one HC-SR04
+long readDistance(int trigPin, int echoPin) {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000); // Timeout at 30 ms
+  long distance = duration * 0.034 / 2; // Convert to cm
+  
+  if (distance == 0 || distance > 400) {
+    return -1;  // Invalid reading
+  }
+  return distance;
+}
+\end{lstlisting}
+
+\newpage
+\subsection{IR sensors testing}
+
+
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+#include <Arduino.h>
+#include "PinDefinitionsAndMore.h"
+#include <IRremote.hpp>
+
+#define DELAY_AFTER_SEND 2000
+#define DELAY_AFTER_LOOP 5000
+
+uint16_t sAddress = 0x0102;
+uint8_t sCommand = 0x34;
+uint8_t sRepeats = 1;
+
+void setup() {
+    Serial.begin(115200);
+    while (!Serial);  // Wait for serial
+
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_PORT_USBVIRTUAL) 
+    || defined(SERIAL_USB) || \defined(USBCON) || defined(SERIALUSB_PID) 
+    || defined(ARDUINO_ARCH_RP2040) || \defined(ARDUINO_attiny3217)
+    delay(4000);  // Wait for serial monitor to connect (USB boards)
+#endif
+
+    Serial.println(F("START " __FILE__ " from " __DATE__));
+    Serial.println(F("Using library version " VERSION_IRREMOTE));
+
+    // Initialize IR Receiver
+    IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
+    Serial.print(F("Ready to receive IR signals of protocols: "));
+    printActiveIRProtocols(&Serial);
+    Serial.println(F(" at pin " STR(IR_RECEIVE_PIN)));
+
+    // Initialize IR Sender
+    IrSender.begin();  // uses IR_SEND_PIN
+    Serial.println(F("Send IR signals at pin " STR(IR_SEND_PIN)));
+
+#if FLASHEND >= 0x3FFF  // For devices with 16k+ flash
+#  if !defined(SEND_PWM_BY_TIMER) && !defined(USE_NO_SEND_PWM) && !defined(ESP32)
+    IrSender.enableIROut(38);  // Init with 38kHz
+
+    Serial.print(F("Send signal mark duration: "));
+    Serial.print(IrSender.periodOnTimeMicros);
+    Serial.print(F(" us, pulse correction: "));
+    Serial.print(IrSender.getPulseCorrectionNanos());
+    Serial.print(F(" ns, total period: "));
+    Serial.print(IrSender.periodTimeMicros);
+    Serial.println(F(" us"));
+#  endif
+
+    Serial.print(RECORD_GAP_MICROS);
+    Serial.println(F(" us is the minimum inter-packet gap"));
+    Serial.print(MARK_EXCESS_MICROS);
+    Serial.println(F(" us correction on marks/spaces for decoding"));
+#endif
+}
+
+void send_ir_data() {
+    Serial.print(F("Sending: 0x"));
+    Serial.print(sAddress, HEX);
+    Serial.print(sCommand, HEX);
+    Serial.println(sRepeats, HEX);
+    Serial.flush();
+
+    if (sRepeats > 4) sRepeats = 4;  // Limit repeats
+    IrSender.sendNEC(sAddress, sCommand, sRepeats);  // NEC protocol
+}
+
+void receive_ir_data() {
+    if (IrReceiver.decode()) {
+        Serial.print(F("Decoded protocol: "));
+        Serial.print(getProtocolString(IrReceiver.decodedIRData.protocol));
+        Serial.print(F(", raw data: "));
+
+#if (__INT_WIDTH__ < 32)
+        Serial.print(IrReceiver.decodedIRData.decodedRawData, HEX);
+#else
+        PrintULL::print(&Serial, IrReceiver.decodedIRData.decodedRawData, HEX);
+#endif
+
+        Serial.print(F(", address: 0x"));
+        Serial.print(IrReceiver.decodedIRData.address, HEX);
+        Serial.print(F(", command: 0x"));
+        Serial.println(IrReceiver.decodedIRData.command, HEX);
+
+        IrReceiver.resume();  // Prepare for next reception
+    }
+}
+
+void loop() {
+    Serial.println();
+    Serial.print(F("address=0x"));
+    Serial.print(sAddress, HEX);
+    Serial.print(F(" command=0x"));
+    Serial.print(sCommand, HEX);
+    Serial.print(F(" repeats="));
+    Serial.println(sRepeats);
+    Serial.flush();
+
+    send_ir_data();
+    IrReceiver.restartAfterSend();  // Restart receiver
+
+    delay((RECORD_GAP_MICROS / 1000) + 5);  // Wait for detection
+    receive_ir_data();
+
+    // Prepare for next loop
+    sAddress += 0x0101;
+    sCommand += 0x11;
+    sRepeats++;
+
+    delay(100);
+}
+\end{lstlisting}
+
+\newpage
+\subsection{Encoders testing}
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+
+\end{lstlisting}
+
+\newpage
+\subsection{Engines testing}
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+
+\end{lstlisting}
+
+\newpage
+\subsection{Engines and HC-SR04}
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+
+\end{lstlisting}
+
+\newpage
+\subsection{Engines, encoders and HC-SR04}
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+// === HolonomicDrive Class ===
+
+class HolonomicDrive {
+public:
+    HolonomicDrive(int rF, int lF, int enF, int rL, int lL, 
+    int enL, int rR, int lR, int enR) {
+        // Assign motor pins
+        RPWM_RIGHT = rF;
+        LPWM_RIGHT = lF;
+        EN_RIGHT = enF;
+        RPWM_LEFT = rL;
+        LPWM_LEFT = lL;
+        EN_LEFT = enL;
+        RPWM_BACK = rR;
+        LPWM_BACK = lR;
+        EN_BACK = enR;
+
+        // Set motor pins as outputs
+        int pins[] = { RPWM_RIGHT, LPWM_RIGHT, EN_RIGHT,
+                       RPWM_LEFT, LPWM_LEFT, EN_LEFT,
+                       RPWM_BACK, LPWM_BACK, EN_BACK };
+
+        for (int i = 0; i < 9; i++) {
+            pinMode(pins[i], OUTPUT);
+        }
+
+        enableMotors();
+    }
+
+    void enableMotors() {
+        digitalWrite(EN_RIGHT, HIGH);
+        digitalWrite(EN_LEFT, HIGH);
+        digitalWrite(EN_BACK, HIGH);
+    }
+
+    void moveForward(int speed) {
+        moveMotor(RPWM_RIGHT, LPWM_RIGHT, speed);
+        moveMotor(RPWM_LEFT, LPWM_LEFT, speed);
+        moveMotor(RPWM_BACK, LPWM_BACK, speed);
+    }
+
+    void moveBackward(int speed) {
+        moveMotorBackward(RPWM_RIGHT, LPWM_RIGHT, speed);
+        moveMotorBackward(RPWM_LEFT, LPWM_LEFT, speed);
+        moveMotorBackward(RPWM_BACK, LPWM_BACK, speed);
+    }
+
+    void slideLeft(int speed) {
+        moveMotor(RPWM_BACK, LPWM_BACK, speed);
+        moveMotorBackward(RPWM_LEFT, LPWM_LEFT, speed);
+        stopMotor(RPWM_RIGHT, LPWM_RIGHT);
+    }
+
+    void slideRight(int speed) {
+        moveMotorBackward(RPWM_BACK, LPWM_BACK, speed);
+        moveMotor(RPWM_LEFT, LPWM_LEFT, speed);
+        stopMotor(RPWM_RIGHT, LPWM_RIGHT);
+    }
+
+    void rotateLeft(int speed) {
+        moveMotorBackward(RPWM_RIGHT, LPWM_RIGHT, speed);
+        moveMotor(RPWM_LEFT, LPWM_LEFT, speed);
+        moveMotorBackward(RPWM_BACK, LPWM_BACK, speed);
+    }
+
+    void rotateRight(int speed) {
+        moveMotor(RPWM_RIGHT, LPWM_RIGHT, speed);
+        moveMotorBackward(RPWM_LEFT, LPWM_LEFT, speed);
+        moveMotor(RPWM_BACK, LPWM_BACK, speed);
+    }
+
+    void stopAll() {
+        stopMotor(RPWM_RIGHT, LPWM_RIGHT);
+        stopMotor(RPWM_LEFT, LPWM_LEFT);
+        stopMotor(RPWM_BACK, LPWM_BACK);
+    }
+
+private:
+    int RPWM_RIGHT, LPWM_RIGHT, EN_RIGHT;
+    int RPWM_LEFT, LPWM_LEFT, EN_LEFT;
+    int RPWM_BACK, LPWM_BACK, EN_BACK;
+
+    void moveMotor(int rpwm, int lpwm, int speed) {
+        analogWrite(rpwm, speed);
+        analogWrite(lpwm, 0);
+    }
+
+    void moveMotorBackward(int rpwm, int lpwm, int speed) {
+        analogWrite(rpwm, 0);
+        analogWrite(lpwm, speed);
+    }
+
+    void stopMotor(int rpwm, int lpwm) {
+        analogWrite(rpwm, 0);
+        analogWrite(lpwm, 0);
+    }
+};
+
+// === Pin Definitions ===
+
+// Ultrasonic Sensors
+const int TP_FRONT = 22, EP_FRONT = 23;
+const int TP_FRONT_LEFT = 24, EP_FRONT_LEFT = 25;
+const int TP_FRONT_RIGHT = 26, EP_FRONT_RIGHT = 27;
+const int TP_LEFT = 28, EP_LEFT = 29;
+const int TP_RIGHT = 30, EP_RIGHT = 31;
+const int TP_BACK = 32, EP_BACK = 33;
+
+// Motor Driver Pins
+const int RPWM_RIGHT = 37, LPWM_RIGHT = 36, REN_RIGHT = 39, LEN_RIGHT = 38;
+const int RPWM_LEFT = 43, LPWM_LEFT = 42, REN_LEFT = 45, LEN_LEFT = 44;
+const int RPWM_BACK = 49, LPWM_BACK = 48, REN_BACK = 51, LEN_BACK = 50;
+
+// Encoder Pins
+const int ENCODER_FRONT_A = 33;
+const int ENCODER_FRONT_B = 32;
+
+// === Globals ===
+float distFront, distFrontLeft, distFrontRight, distLeft, distRight, distBack;
+const float OBSTACLE_DISTANCE = 10.0;  // cm
+
+// === Setup ===
+
+void setup() {
+    Serial.begin(9600);
+
+    int trigPins[] = { TP_FRONT, TP_FRONT_LEFT, TP_FRONT_RIGHT, 
+    TP_LEFT, TP_RIGHT, TP_BACK };
+    int echoPins[] = { EP_FRONT, EP_FRONT_LEFT, EP_FRONT_RIGHT, 
+    EP_LEFT, EP_RIGHT, EP_BACK };
+
+    for (int i = 0; i < 6; i++) {
+        pinMode(trigPins[i], OUTPUT);
+        pinMode(echoPins[i], INPUT);
+    }
+
+    int motorPins[] = {
+        RPWM_RIGHT, LPWM_RIGHT, REN_RIGHT, LEN_RIGHT,
+        RPWM_LEFT, LPWM_LEFT, REN_LEFT, LEN_LEFT,
+        RPWM_BACK, LPWM_BACK, REN_BACK, LEN_BACK
+    };
+
+    for (int i = 0; i < 12; i++) pinMode(motorPins[i], OUTPUT);
+
+    digitalWrite(REN_RIGHT, HIGH);
+    digitalWrite(LEN_RIGHT, HIGH);
+    digitalWrite(REN_LEFT, HIGH);
+    digitalWrite(LEN_LEFT, HIGH);
+    digitalWrite(REN_BACK, HIGH);
+    digitalWrite(LEN_BACK, HIGH);
+
+    pinMode(ENCODER_FRONT_A, INPUT);
+    pinMode(ENCODER_FRONT_B, INPUT);
+
+    Serial.println("ROBOT READY");
+}
+
+// === Distance Sensing ===
+
+float readDistance(int trigPin, int echoPin) {
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+
+    long duration = pulseIn(echoPin, HIGH, 30000);
+    return (duration <= 0) ? 999.0 : duration * 0.034 / 2;
+}
+
+void updateDistances() {
+    distFront = readDistance(TP_FRONT, EP_FRONT);
+    distFrontLeft = readDistance(TP_FRONT_LEFT, EP_FRONT_LEFT);
+    distFrontRight = readDistance(TP_FRONT_RIGHT, EP_FRONT_RIGHT);
+    distLeft = readDistance(TP_LEFT, EP_LEFT);
+    distRight = readDistance(TP_RIGHT, EP_RIGHT);
+    distBack = readDistance(TP_BACK, EP_BACK);
+}
+
+// === Motor Logic ===
+
+void setMotor(int rpwm, int lpwm, float motorSpeed) {
+    motorSpeed = constrain(motorSpeed, -255, 255);
+
+    if (motorSpeed > 0) {
+        analogWrite(rpwm, motorSpeed);
+        analogWrite(lpwm, 0);
+    } else {
+        analogWrite(rpwm, 0);
+        analogWrite(lpwm, -motorSpeed);
+    }
+}
+
+// === Triskar Movement Logic ===
+
+void moveRobot(float vx, float vy, float omega, int speed = 180) {
+    float v_front = -vx + omega;
+    float v_left = 0.5 * vx - 0.866 * vy + omega;
+    float v_right = 0.5 * vx + 0.866 * vy + omega;
+
+    float maxVal = max(max(abs(v_front), abs(v_left)), abs(v_right));
+
+    if (maxVal > 1.0) {
+        v_front /= maxVal;
+        v_left /= maxVal;
+        v_right /= maxVal;
+    }
+
+    setMotor(RPWM_RIGHT, LPWM_RIGHT, v_front * speed);
+    setMotor(RPWM_LEFT, LPWM_LEFT, v_left * speed);
+    setMotor(RPWM_BACK, LPWM_BACK, v_right * speed);
+}
+
+void stopAllMotors() {
+    analogWrite(RPWM_RIGHT, 0);
+    analogWrite(LPWM_RIGHT, 0);
+    analogWrite(RPWM_LEFT, 0);
+    analogWrite(LPWM_LEFT, 0);
+    analogWrite(RPWM_BACK, 0);
+    analogWrite(LPWM_BACK, 0);
+}
+
+// === Main Loop ===
+
+void loop() {
+    updateDistances();
+
+    Serial.print("F: "); Serial.print(distFront);
+    Serial.print(" FL: "); Serial.print(distFrontLeft);
+    Serial.print(" FR: "); Serial.print(distFrontRight);
+    Serial.print(" L: "); Serial.print(distLeft);
+    Serial.print(" R: "); Serial.print(distRight);
+    Serial.print(" B: "); Serial.println(distBack);
+
+    if (distFront < OBSTACLE_DISTANCE || distFrontLeft < OBSTACLE_DISTANCE || 
+    distFrontRight < OBSTACLE_DISTANCE) {
+        Serial.println("Obstacle in front - rotating to avoid");
+        if (distLeft > distRight) {
+            moveRobot(0.0, 0.0, -1.0);
+        } else {
+            moveRobot(0.0, 0.0, 1.0);
+        }
+        delay(500);
+        stopAllMotors();
+    }
+    else if (distLeft < OBSTACLE_DISTANCE) {
+        Serial.println("Obstacle on left - sliding right");
+        moveRobot(1.0, 0.0, 0.0);
+        delay(400);
+        stopAllMotors();
+    }
+    else if (distRight < OBSTACLE_DISTANCE) {
+        Serial.println("Obstacle on right - sliding left");
+        moveRobot(-1.0, 0.0, 0.0);
+        delay(400);
+        stopAllMotors();
+    }
+    else {
+        Serial.println("Path is clear - moving forward");
+        moveRobot(-1.0, 1.0, 0.0);
+    }
+
+    delay(200);
+}
+\end{lstlisting}
+\newpage
+\subsection{Communication script} %IC2 
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+
+\end{lstlisting}
+
+\newpage
+\subsection{Alpha script}
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+
+\end{lstlisting}
+
+
+\newpage
+\subsection{Final implementation}
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+
+\end{lstlisting}
+
+\newpage
+\section{Bill of material}
+\begin{table}[ht]
+\centering
+\begin{tabular}{|>{\raggedright\arraybackslash}p{4cm}|>{\raggedright\arraybackslash}p{3cm}|>{\raggedright\arraybackslash}p{6cm}|c|}
+\hline
+\textbf{COMPONENT} & \textbf{JOB} & \textbf{MODEL} & \textbf{QUANTITY} \\ \hline
+Motor & To move the robot & JGB37-520 Encoder Hall miniature DC motor with 178 RPM, 1.8 torque & 3 \\ \hline
+Motor Driver & Allows the controller to interact with the motors & Dual motor driver module BTS7960 43A H-bridge & 3 \\ \hline
+Hub with 6mm shaft & To connect wheels with motors & 6mm 4pcs couplings & 1 \\ \hline
+Wheels & To move the robot & 4PCS 58mm Nylon Omni wheels, customizable for Arduino ROS & 1 \\ \hline
+Cables & To connect the parts & 40/120 pcs 40PIN 20 CM Dupont wires, Male to Male, Female to Female jumper wires for Arduino & 1 \\ \hline
+Material for inside structure & & MDF panel L 220 x H 152 cm, 3mm thickness, custom size (Leroy Merlin) & 1 \\ \hline
+\end{tabular}
+\caption{Table with components, jobs and models}
+\label{tab:components}
+\end{table}
+\subsection{Components datasheet}
+
+\newpage
+\section{Problems during design and building phases} %engine brackets, the blue battery, slow delivery, electromagnetic fields and motors, recreating the lower base
+
+\newpage
+\section{Photo gallery}
+\noindent
+\begin{minipage}[t]{0.5\textwidth}
+  \vspace{0pt}
+  \includegraphics[width=0.9\linewidth]{photos/1.jpg}
+  \captionof{figure}{three-wheel Omnidirectional}
+  \vspace{0pt}
+  \includegraphics[width=0.9\linewidth]{photos/3.jpg}
+  \captionof{figure}{three-wheel Omnidirectional}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.5\textwidth}
+    \vspace{0pt}
+    \includegraphics[width=0.9\linewidth]{photos/2.jpg}
+  \captionof{figure}{three-wheel Omnidirectional}
+  \vspace{0pt}
+  \includegraphics[width=0.9\linewidth]{photos/4.jpg}
+  \captionof{figure}{three-wheel Omnidirectional}
+ \end{minipage}
+
+\newpage
+\noindent
+\begin{minipage}[t]{0.5\textwidth}
+  \vspace{0pt}
+  \vspace{0pt}
+  \includegraphics[width=0.9\linewidth]{photos/5.jpg}
+  \captionof{figure}{three-wheel Omnidirectional}
+  \vspace{0pt}
+  \includegraphics[width=0.9\linewidth]{photos/9.jpg}
+  \captionof{figure}{three-wheel Omnidirectional}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.5\textwidth}
+\vspace{0pt}
+  \includegraphics[width=0.9\linewidth]{photos/6.jpg}
+  \captionof{figure}{three-wheel Omnidirectional}
+  \vspace{0pt}
+  \includegraphics[width=0.9\linewidth]{photos/dani_fixing_robot.jpeg}
+  \captionof{figure}{three-wheel Omnidirectional}
+\end{minipage}
+
+
+\newpage
+\section{Testing}
+\subsection{Observations}
+\subsection{Difficulties and limitations}
+
+\newpage
+\section{Possible future improvements}
+
+\newpage
+\section{Final considerations}
+
+\end{document}
