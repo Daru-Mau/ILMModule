@@ -20,8 +20,8 @@
 #define ECHO_RIGHT 31
 
 // REAR sensor
-#define TRIG_REAR 2
-#define ECHO_REAR 3
+#define TRIG_REAR 32
+#define ECHO_REAR 33
 
 // Test Configuration
 #define MAX_DISTANCE 400    // Maximum reliable reading distance in cm
