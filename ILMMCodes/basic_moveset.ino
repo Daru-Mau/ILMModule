@@ -152,15 +152,10 @@ void stopAllMotors()
   analogWrite(LPWM_R, 0);
 }
 
-// === Main Logic ===
+// === Main Loop ===
 void loop()
 {
   updateDistances();
-
-  bool obstacleFront = (distFL < OBSTACLE_DISTANCE) || (distF < OBSTACLE_DISTANCE) || (distFR < OBSTACLE_DISTANCE);
-  bool obstacleBack = (distBL < OBSTACLE_DISTANCE) || (distB < OBSTACLE_DISTANCE) || (distBR < OBSTACLE_DISTANCE);
-  bool obstacleLeft = (distFL < OBSTACLE_DISTANCE) || (distBL < OBSTACLE_DISTANCE);
-  bool obstacleRight = (distFR < OBSTACLE_DISTANCE) || (distBR < OBSTACLE_DISTANCE);
 
   Serial.print("FL: ");
   Serial.print(distFL);
@@ -175,42 +170,50 @@ void loop()
   Serial.print(" BR: ");
   Serial.println(distBR);
 
-  if (obstacleFront)
+  bool triggered = false;
+
+  if (distFL < OBSTACLE_DISTANCE)
   {
-    Serial.println("Obstacle ahead - moving backward");
-    moveRobot(-1.0, 0.0, 0.0);
-    lastObstacle = true;
-  }
-  else if (obstacleBack)
-  {
-    Serial.println("Obstacle behind - moving forward");
-    moveRobot(1.0, 0.0, 0.0);
-    lastObstacle = true;
-  }
-  else if (obstacleLeft)
-  {
-    Serial.println("Obstacle left - sliding right");
+    Serial.println("FL triggered - slide right");
     moveRobot(0.0, 1.0, 0.0);
-    lastObstacle = true;
+    triggered = true;
   }
-  else if (obstacleRight)
+  else if (distF < OBSTACLE_DISTANCE)
   {
-    Serial.println("Obstacle right - sliding left");
+    Serial.println("F triggered - move back");
+    moveRobot(-1.0, 0.0, 0.0);
+    triggered = true;
+  }
+  else if (distFR < OBSTACLE_DISTANCE)
+  {
+    Serial.println("FR triggered - slide left");
     moveRobot(0.0, -1.0, 0.0);
-    lastObstacle = true;
+    triggered = true;
   }
-  else
+  else if (distBL < OBSTACLE_DISTANCE)
   {
-    // No obstacles
-    if (lastObstacle)
-    {
-      stopAllMotors();
-      delay(100); // brief pause after obstacle clearance
-      lastObstacle = false;
-    }
-    Serial.println("Path clear - moving forward");
+    Serial.println("BL triggered - slide right");
+    moveRobot(0.0, 1.0, 0.0);
+    triggered = true;
+  }
+  else if (distB < OBSTACLE_DISTANCE)
+  {
+    Serial.println("B triggered - move forward");
     moveRobot(1.0, 0.0, 0.0);
+    triggered = true;
+  }
+  else if (distBR < OBSTACLE_DISTANCE)
+  {
+    Serial.println("BR triggered - slide left");
+    moveRobot(0.0, -1.0, 0.0);
+    triggered = true;
   }
 
-  delay(100);
+  if (!triggered)
+  {
+    stopAllMotors();
+    Serial.println("No movement - all sensors clear");
+  }
+
+  delay(200);
 }

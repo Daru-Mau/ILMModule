@@ -1,0 +1,53 @@
+This is BibTeX, Version 0.99d
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+Reallocating 'name_of_file' (item size: 1) to 9 items.
+The style file: plainnat.bst
+Reallocating 'name_of_file' (item size: 1) to 13 items.
+Database file #1: socialrobots.bib
+Warning--empty year in jibo
+Warning--empty year in kuri
+Warning--can't use both volume and number fields in paro2003
+Warning--empty year in pepperSoftbank
+You've used 11 entries,
+            2773 wiz_defined-function locations,
+            652 strings with 6102 characters,
+and the built_in function-call counts, 3913 in all, are:
+= -- 336
+> -- 141
+< -- 12
++ -- 53
+- -- 42
+* -- 235
+:= -- 601
+add.period$ -- 36
+call.type$ -- 11
+change.case$ -- 42
+chr.to.int$ -- 11
+cite$ -- 26
+duplicate$ -- 220
+empty$ -- 393
+format.name$ -- 55
+if$ -- 830
+int.to.chr$ -- 1
+int.to.str$ -- 1
+missing$ -- 13
+newline$ -- 66
+num.names$ -- 44
+pop$ -- 136
+preamble$ -- 1
+purify$ -- 36
+quote$ -- 0
+skip$ -- 149
+stack$ -- 0
+substring$ -- 109
+swap$ -- 25
+text.length$ -- 2
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 96
+warning$ -- 4
+while$ -- 40
+width$ -- 0
+write$ -- 146
+(There were 4 warnings)

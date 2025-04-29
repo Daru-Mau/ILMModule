@@ -1,0 +1,71 @@
+\begin{thebibliography}{11}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Dautenhahn(2007)]{dautenhahn2007}
+Kerstin Dautenhahn.
+\newblock Socially intelligent robots: dimensions of human–robot interaction.
+\newblock \emph{Philosophical Transactions of the Royal Society B: Biological
+  Sciences}, 362\penalty0 (1480):\penalty0 679--704, 2007.
+
+\bibitem[Dreyfus(2002)]{dreyfus2002}
+Hubert~L. Dreyfus.
+\newblock \emph{What Computers Still Can't Do: A Critique of Artificial
+  Reason}.
+\newblock MIT Press, 2002.
+
+\bibitem[{Jibo Inc.}()]{jibo}
+{Jibo Inc.}
+\newblock Jibo social robot.
+\newblock \url{https://www.jibo.com}.
+\newblock Accessed: 2024-10-01.
+
+\bibitem[Johnson(2007)]{johnson2007}
+Mark Johnson.
+\newblock \emph{The Meaning of the Body: Aesthetics of Human Understanding}.
+\newblock University of Chicago Press, 2007.
+
+\bibitem[Levinas(1969)]{levinas1969}
+Emmanuel Levinas.
+\newblock \emph{Totality and Infinity: An Essay on Exteriority}.
+\newblock Duquesne University Press, 1969.
+
+\bibitem[{Mayfield Robotics}()]{kuri}
+{Mayfield Robotics}.
+\newblock Kuri home robot.
+\newblock \url{https://www.heykuri.com}.
+\newblock Accessed: 2024-10-01.
+
+\bibitem[Merleau-Ponty(1962)]{merleau1962}
+Maurice Merleau-Ponty.
+\newblock \emph{Phenomenology of Perception}.
+\newblock Routledge, 1962.
+
+\bibitem[Mori et~al.(2012)Mori, MacDorman, and Kageki]{mori2012uncanny}
+Masahiro Mori, Karl~F. MacDorman, and Norri Kageki.
+\newblock The uncanny valley.
+\newblock \emph{IEEE Robotics \& Automation Magazine}, 19\penalty0
+  (2):\penalty0 98--100, 2012.
+
+\bibitem[Shibata and Wada(2003)]{paro2003}
+Takanori Shibata and Kazuyoshi Wada.
+\newblock Robot therapy: A new approach for mental healthcare of the elderly.
+\newblock In \emph{IEEE Transactions on Robotics and Automation}, volume~19,
+  pages 1001--1006, 2003.
+
+\bibitem[{SoftBank Robotics}()]{pepperSoftbank}
+{SoftBank Robotics}.
+\newblock Pepper the humanoid robot.
+\newblock \url{https://www.softbankrobotics.com/emea/en/pepper}.
+\newblock Accessed: 2024-10-01.
+
+\bibitem[Turkle(2011)]{turkle2011}
+Sherry Turkle.
+\newblock \emph{Alone Together: Why We Expect More from Technology and Less
+  from Each Other}.
+\newblock Basic Books, 2011.
+
+\end{thebibliography}
