@@ -357,10 +357,10 @@ const float NORMAL_SPEED = 1.0;       // Full speed for normal navigation
 const int PATH_UPDATE_INTERVAL = 100; // ms between path updates
 
 // Autonomous exploration parameters
-const float WALL_FOLLOW_DISTANCE = 60.0;           // cm, distance to maintain from walls
-const float TURN_THRESHOLD = 45.0;                 // cm, distance to trigger turns
-const unsigned long MODE_SWITCH_INTERVAL = 300000; // 5 minutes in milliseconds
-const unsigned long EXPLORATION_TURN_TIME = 2000;  // ms to perform exploration turns
+const float WALL_FOLLOW_DISTANCE = 60.0; // cm, distance to maintain from walls
+const float TURN_THRESHOLD = 45.0;       // cm, distance to trigger turns
+// const unsigned long MODE_SWITCH_INTERVAL = 300000; // 5 minutes in milliseconds
+const unsigned long EXPLORATION_TURN_TIME = 2000; // ms to perform exploration turns
 
 class NavigationController
 {
@@ -391,6 +391,20 @@ public:
     explorationPhase = 0;
   }
 
+  void processSerialCommands()
+  {
+    if (Serial.available())
+    {
+      char cmd = Serial.read();
+      switch (cmd)
+      {
+      case 'M': // Manual mode switch command
+        toggleNavigationMode();
+        break;
+      }
+    }
+  }
+
   void updateNavigation()
   {
     unsigned long now = millis();
@@ -400,12 +414,15 @@ public:
     }
     lastUpdate = now;
 
+    // Process any pending serial commands
+    processSerialCommands();
+
     // Auto mode switching every MODE_SWITCH_INTERVAL
-    if (now - lastModeSwitch >= MODE_SWITCH_INTERVAL)
+    /* if (now - lastModeSwitch >= MODE_SWITCH_INTERVAL)
     {
       toggleNavigationMode();
       lastModeSwitch = now;
-    }
+    } */
 
     // Update speeds with smooth acceleration
     if (currentSpeed < targetSpeed)
@@ -742,7 +759,9 @@ void loop()
     lastUpdateTime = currentTime;
 
     // Debug output
-    Serial.print("Distances (cm) - FL: ");
+    Serial.print("Mode: ");
+    Serial.print(navigator.getNavigationMode() == APRILTAG_MODE ? "AprilTag" : "Autonomous");
+    Serial.print(" - Distances (cm) - FL: ");
     Serial.print(distFL);
     Serial.print(" F: ");
     Serial.print(distF);
