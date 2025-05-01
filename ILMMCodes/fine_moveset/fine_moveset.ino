@@ -331,6 +331,406 @@ void stop()
   stopAllMotors();
 }
 
+// === Navigation States and Constants ===
+enum NavState
+{
+  IDLE,
+  MOVING_TO_TARGET,
+  DOCKING,
+  UNDOCKING,
+  ATTENDING_PERSON,
+  RETURNING_TO_CHARGE,
+  AUTONOMOUS_EXPLORE // New state for autonomous exploration
+};
+
+enum NavigationMode
+{
+  APRILTAG_MODE,
+  AUTONOMOUS_MODE
+};
+
+// Social navigation parameters
+const float PERSONAL_SPACE = 80.0;    // cm, keep this distance from people
+const float APPROACH_SPEED = 0.6;     // 60% speed when approaching people
+const float DOCK_SPEED = 0.3;         // 30% speed when docking
+const float NORMAL_SPEED = 1.0;       // Full speed for normal navigation
+const int PATH_UPDATE_INTERVAL = 100; // ms between path updates
+
+// Autonomous exploration parameters
+const float WALL_FOLLOW_DISTANCE = 60.0;           // cm, distance to maintain from walls
+const float TURN_THRESHOLD = 45.0;                 // cm, distance to trigger turns
+const unsigned long MODE_SWITCH_INTERVAL = 300000; // 5 minutes in milliseconds
+const unsigned long EXPLORATION_TURN_TIME = 2000;  // ms to perform exploration turns
+
+class NavigationController
+{
+private:
+  NavState currentState;
+  NavigationMode navMode;
+  float currentSpeed;
+  float targetSpeed;
+  unsigned long lastUpdate;
+  unsigned long lastModeSwitch;
+  unsigned long lastTurn;
+  bool personDetected;
+  bool wallOnRight;     // For wall following behavior
+  int explorationPhase; // To track exploration behavior
+
+public:
+  NavigationController()
+  {
+    currentState = IDLE;
+    navMode = APRILTAG_MODE;
+    currentSpeed = 0;
+    targetSpeed = 0;
+    lastUpdate = 0;
+    lastModeSwitch = 0;
+    lastTurn = 0;
+    personDetected = false;
+    wallOnRight = true;
+    explorationPhase = 0;
+  }
+
+  void updateNavigation()
+  {
+    unsigned long now = millis();
+    if (now - lastUpdate < PATH_UPDATE_INTERVAL)
+    {
+      return;
+    }
+    lastUpdate = now;
+
+    // Auto mode switching every MODE_SWITCH_INTERVAL
+    if (now - lastModeSwitch >= MODE_SWITCH_INTERVAL)
+    {
+      toggleNavigationMode();
+      lastModeSwitch = now;
+    }
+
+    // Update speeds with smooth acceleration
+    if (currentSpeed < targetSpeed)
+    {
+      currentSpeed = min(currentSpeed + ACCELERATION_RATE, targetSpeed);
+    }
+    else if (currentSpeed > targetSpeed)
+    {
+      currentSpeed = max(currentSpeed - ACCELERATION_RATE, targetSpeed);
+    }
+
+    // Execute current state behavior
+    switch (currentState)
+    {
+    case MOVING_TO_TARGET:
+      if (navMode == AUTONOMOUS_MODE)
+      {
+        performAutonomousExploration();
+      }
+      else
+      {
+        moveToTarget();
+      }
+      break;
+    case DOCKING:
+      performDocking();
+      break;
+    case UNDOCKING:
+      performUndocking();
+      break;
+    case ATTENDING_PERSON:
+      attendPerson();
+      break;
+    case RETURNING_TO_CHARGE:
+      returnToCharge();
+      break;
+    case AUTONOMOUS_EXPLORE:
+      performAutonomousExploration();
+      break;
+    case IDLE:
+      stop();
+      break;
+    }
+  }
+
+  void performAutonomousExploration()
+  {
+    float minFrontDist = min(min(distFL, distF), distFR);
+    float minRightDist = min(distFR, distBR);
+    float minLeftDist = min(distFL, distBL);
+    unsigned long now = millis();
+
+    targetSpeed = NORMAL_SPEED;
+
+    // Basic wall following and obstacle avoidance
+    if (minFrontDist < TURN_THRESHOLD)
+    {
+      // Obstacle ahead - choose turn direction
+      if (minLeftDist > minRightDist)
+      {
+        // More space on the left, turn left
+        rotateLeft(currentSpeed);
+        if (now - lastTurn > EXPLORATION_TURN_TIME)
+        {
+          lastTurn = now;
+          explorationPhase = (explorationPhase + 1) % 4;
+        }
+      }
+      else
+      {
+        // More space on the right, turn right
+        rotateRight(currentSpeed);
+        if (now - lastTurn > EXPLORATION_TURN_TIME)
+        {
+          lastTurn = now;
+          explorationPhase = (explorationPhase + 1) % 4;
+        }
+      }
+    }
+    else
+    {
+      // No immediate obstacle - follow wall or explore
+      if (wallOnRight)
+      {
+        if (minRightDist > WALL_FOLLOW_DISTANCE + 20)
+        {
+          // Lost wall - turn right to find it
+          moveForwardRight(currentSpeed * 0.7);
+        }
+        else if (minRightDist < WALL_FOLLOW_DISTANCE - 20)
+        {
+          // Too close to wall - move away
+          moveForwardLeft(currentSpeed * 0.7);
+        }
+        else
+        {
+          // Good distance - move forward
+          moveForward(currentSpeed);
+        }
+      }
+      else
+      {
+        // Mirror behavior for left wall following
+        if (minLeftDist > WALL_FOLLOW_DISTANCE + 20)
+        {
+          moveForwardLeft(currentSpeed * 0.7);
+        }
+        else if (minLeftDist < WALL_FOLLOW_DISTANCE - 20)
+        {
+          moveForwardRight(currentSpeed * 0.7);
+        }
+        else
+        {
+          moveForward(currentSpeed);
+        }
+      }
+    }
+
+    // Check for potential person detection
+    if (isPersonLikeObject())
+    {
+      transitionTo(ATTENDING_PERSON);
+    }
+  }
+
+  bool isPersonLikeObject()
+  {
+    // Simple heuristic to detect person-like obstacles
+    float centerDist = distF;
+    float leftDist = distFL;
+    float rightDist = distFR;
+
+    // Look for obstacle of roughly person width (40-80cm) at appropriate distance
+    return (centerDist < PERSONAL_SPACE && centerDist > SAFE_DISTANCE &&
+            abs(leftDist - rightDist) < 30.0 &&  // Roughly symmetric
+            abs(centerDist - leftDist) < 40.0 && // Consistent depth
+            abs(centerDist - rightDist) < 40.0);
+  }
+
+  void toggleNavigationMode()
+  {
+    navMode = (navMode == APRILTAG_MODE) ? AUTONOMOUS_MODE : APRILTAG_MODE;
+    Serial.print("Switching to ");
+    Serial.println(navMode == APRILTAG_MODE ? "AprilTag Mode" : "Autonomous Mode");
+
+    // Reset relevant state variables
+    currentSpeed = 0;
+    targetSpeed = 0;
+    explorationPhase = 0;
+
+    // Choose appropriate initial state
+    if (navMode == AUTONOMOUS_MODE)
+    {
+      transitionTo(AUTONOMOUS_EXPLORE);
+    }
+    else
+    {
+      transitionTo(MOVING_TO_TARGET);
+    }
+  }
+
+  void moveToTarget()
+  {
+    float minFrontDist = min(min(distFL, distF), distFR);
+
+    // Check for people or obstacles
+    if (minFrontDist < PERSONAL_SPACE)
+    {
+      targetSpeed = APPROACH_SPEED;
+      // If very close, transition to attending person
+      if (minFrontDist < SAFE_DISTANCE * 1.5)
+      {
+        transitionTo(ATTENDING_PERSON);
+        return;
+      }
+    }
+    else
+    {
+      targetSpeed = NORMAL_SPEED;
+    }
+
+    // Basic obstacle avoidance while moving
+    if (minFrontDist < SLOW_DOWN_DISTANCE)
+    {
+      if (distFL > distFR && distFL > SAFE_DISTANCE)
+      {
+        moveForwardLeft(currentSpeed);
+      }
+      else if (distFR > distFL && distFR > SAFE_DISTANCE)
+      {
+        moveForwardRight(currentSpeed);
+      }
+      else
+      {
+        moveBackward(currentSpeed * 0.5);
+      }
+    }
+    else
+    {
+      moveForward(currentSpeed);
+    }
+  }
+
+  void performDocking()
+  {
+    targetSpeed = DOCK_SPEED;
+    // Implement precise docking movement using April tag feedback
+    // This will be integrated with April tag system later
+    float dockingDistance = distF; // Later use April tag distance
+
+    if (dockingDistance > SAFE_DISTANCE * 2)
+    {
+      moveForward(currentSpeed);
+    }
+    else if (dockingDistance > SAFE_DISTANCE)
+    {
+      moveForward(currentSpeed * 0.5);
+    }
+    else
+    {
+      transitionTo(IDLE);
+    }
+  }
+
+  void performUndocking()
+  {
+    targetSpeed = DOCK_SPEED;
+    if (distB > SAFE_DISTANCE * 2)
+    {
+      moveBackward(currentSpeed);
+    }
+    else
+    {
+      transitionTo(IDLE);
+    }
+  }
+
+  void attendPerson()
+  {
+    // Implement social interaction positioning
+    // Stay at PERSONAL_SPACE distance and slightly angle the robot
+    targetSpeed = APPROACH_SPEED;
+
+    float minFrontDist = min(min(distFL, distF), distFR);
+    if (abs(minFrontDist - PERSONAL_SPACE) < 10.0)
+    {
+      // We're at a good distance, just adjust orientation
+      if (distFL > distFR)
+      {
+        rotateLeft(0.2); // Slight angle for more natural positioning
+      }
+      else
+      {
+        rotateRight(0.2);
+      }
+    }
+    else if (minFrontDist < PERSONAL_SPACE)
+    {
+      moveBackward(currentSpeed);
+    }
+    else
+    {
+      moveForward(currentSpeed);
+    }
+  }
+
+  void returnToCharge()
+  {
+    // Similar to moveToTarget but with docking preparation
+    moveToTarget();
+    // When close to charging station, transition to docking
+    if (distF < SAFE_DISTANCE * 3)
+    { // Will use April tag detection instead
+      transitionTo(DOCKING);
+    }
+  }
+
+  void transitionTo(NavState newState)
+  {
+    if (newState == currentState)
+      return;
+
+    // Handle state exit actions
+    switch (currentState)
+    {
+    case ATTENDING_PERSON:
+      targetSpeed = NORMAL_SPEED;
+      break;
+    case AUTONOMOUS_EXPLORE:
+      lastTurn = millis(); // Reset turn timing
+      break;
+    }
+
+    currentState = newState;
+
+    // Handle state entry actions
+    switch (currentState)
+    {
+    case DOCKING:
+      targetSpeed = DOCK_SPEED;
+      break;
+    case ATTENDING_PERSON:
+      targetSpeed = APPROACH_SPEED;
+      break;
+    case AUTONOMOUS_EXPLORE:
+      targetSpeed = NORMAL_SPEED;
+      explorationPhase = 0;
+      break;
+    }
+  }
+
+  NavState getCurrentState()
+  {
+    return currentState;
+  }
+
+  NavigationMode getNavigationMode()
+  {
+    return navMode;
+  }
+};
+
+NavigationController navigator;
+
+// Update the loop function to use the navigation controller
 void loop()
 {
   unsigned long currentTime = millis();
@@ -362,28 +762,7 @@ void loop()
     }
     else
     {
-      float minFrontDist = min(min(distFL, distF), distFR);
-
-      if (minFrontDist < SLOW_DOWN_DISTANCE)
-      {
-        // If approaching obstacle, try to find clear path
-        if (distFL > distFR && distFL > SAFE_DISTANCE)
-        {
-          moveForwardLeft(0.5); // Turn left while moving forward
-        }
-        else if (distFR > distFL && distFR > SAFE_DISTANCE)
-        {
-          moveForwardRight(0.5); // Turn right while moving forward
-        }
-        else
-        {
-          moveBackward(0.5); // Back up if no clear path
-        }
-      }
-      else
-      {
-        moveForward(1.0); // Move forward if path is clear
-      }
+      navigator.updateNavigation();
     }
   }
 }
