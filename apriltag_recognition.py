@@ -61,7 +61,7 @@ def setup_serial():
 def setup_camera():
     picam2 = Picamera2()
     config = picam2.create_preview_configuration(
-        main={"size": (576, 1024), "format": "RGB888"},
+        main={"size": (224, 224), "format": "RGB888"},
         controls={
             "FrameDurationLimits": (100000, 100000),
             "AnalogueGain": 4.0,
