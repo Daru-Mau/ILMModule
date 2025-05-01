@@ -1,13 +1,13 @@
 # Fdb version 4
-["bibtex main"] 1745913036.13135 "main.aux" "main.bbl" "main" 1745913038.44072 0
+["bibtex main"] 1746084478.24138 "main.aux" "main.bbl" "main" 1746084481.73511 0
   "./socialrobots.bib" 1745865130 2132 a40a2c92f6383c4418cba7139a77ac26 ""
   "C:/Users/Estudios/AppData/Local/Programs/MiKTeX/bibtex/bst/natbib/plainnat.bst" 1284455456 26816 ffe5423d2019860bad9f54bc402fac15 ""
-  "main.aux" 1745913037 9288 8d877d039169613ea9d3bdc81fc899b0 "pdflatex"
+  "main.aux" 1746084480 11375 d10209a05f070321444d1448b697ed71 "pdflatex"
   (generated)
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1745913036.41392 "c:/Users/Estudios/Documents/VC_Projects/12vo_Semestre/R&D/LMModule/Robotics & Design_ Localization module anthology/main.tex" "main.pdf" "main" 1745913038.44174 0
+["pdflatex"] 1746084478.78321 "c:/Users/Estudios/Documents/VC_Projects/12vo_Semestre/R&D/LMModule/Robotics & Design_ Localization module anthology/main.tex" "main.pdf" "main" 1746084481.7368 0
   "C:/Users/Estudios/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map" 1745913027 80909 eab91d9745dd2edfd62a31d53cd5fe15 ""
   "C:/Users/Estudios/AppData/Local/MiKTeX/fonts/pk/ljfour/jknappen/ec/dpi600/tcbx1000.pk" 1745913031 12124 c478f09efbc60ec6e419002ca31570c2 ""
   "C:/Users/Estudios/AppData/Local/MiKTeX/fonts/pk/ljfour/jknappen/ec/dpi600/tcrm1000.pk" 1745913032 11548 45445fca31d4ba2fbdd9a12add8d1766 ""
@@ -103,12 +103,12 @@
   "C:/Users/Estudios/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388494052 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/Estudios/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1700131122 55487 80a65caedd3722f4c20a14a69e785d8f ""
   "C:/Users/Estudios/AppData/Local/Programs/MiKTeX/tex/latex/xkeyval/xkeyval.sty" 1656236919 4937 4ce600ce9bd4ec84d0250eb6892fcf4f ""
-  "c:/Users/Estudios/Documents/VC_Projects/12vo_Semestre/R&D/LMModule/Robotics & Design_ Localization module anthology/main.tex" 1745911925 53154 0caf1019691ebc32406e8b0303428270 ""
+  "c:/Users/Estudios/Documents/VC_Projects/12vo_Semestre/R&D/LMModule/Robotics & Design_ Localization module anthology/main.tex" 1746084474 64204 a6377f5222842ac39c18cab6b83f0d06 ""
   "cover.tex" 1745865130 769 8cfde1e36e45cf3c0cf4ac514643dc7b ""
-  "main.aux" 1745913037 9288 8d877d039169613ea9d3bdc81fc899b0 "pdflatex"
-  "main.bbl" 1745913036 2470 efaf5bd5b3f917a0b7b38d0d17927bbb "bibtex main"
-  "main.tex" 1745911925 53154 0caf1019691ebc32406e8b0303428270 ""
-  "main.toc" 1745913037 3661 815c268dd643e1ce6a9591c27112ef13 "pdflatex"
+  "main.aux" 1746084480 11375 d10209a05f070321444d1448b697ed71 "pdflatex"
+  "main.bbl" 1746084478 2470 efaf5bd5b3f917a0b7b38d0d17927bbb "bibtex main"
+  "main.tex" 1746084474 64204 a6377f5222842ac39c18cab6b83f0d06 ""
+  "main.toc" 1746084480 5010 86801fd9ccbe1193b25c5e645d13a227 "pdflatex"
   "pfds/IL_schema.pdf" 1745865133 146587 aebb3d82ea8fa801d45a6587229f9ee4 ""
   "photos/1.jpg" 1745865133 108920 621d13a1ab311d1606f86eaa0060deb9 ""
   "photos/2.jpg" 1745865133 200985 5886a565049647042f1a990f582d5271 ""

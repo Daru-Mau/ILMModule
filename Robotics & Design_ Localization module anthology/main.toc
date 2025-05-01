@@ -42,8 +42,26 @@
 \contentsline {section}{\numberline {11}Design and Implementation Challenges}{34}{}%
 \contentsline {section}{\numberline {12}Photo gallery}{35}{}%
 \contentsline {section}{\numberline {13}Testing}{37}{}%
-\contentsline {subsection}{\numberline {13.1}Observations}{37}{}%
-\contentsline {subsection}{\numberline {13.2}Difficulties and limitations}{37}{}%
-\contentsline {section}{\numberline {14}Possible future improvements}{38}{}%
-\contentsline {section}{\numberline {15}Final considerations}{39}{}%
-\contentsline {subsection}{\numberline {15.1}Localization Implementation}{39}{}%
+\contentsline {subsection}{\numberline {13.1}Testing Methodology}{37}{}%
+\contentsline {subsection}{\numberline {13.2}Sensor Testing}{37}{}%
+\contentsline {subsection}{\numberline {13.3}Motor Testing}{37}{}%
+\contentsline {subsection}{\numberline {13.4}Integration Testing Results}{38}{}%
+\contentsline {subsection}{\numberline {13.5}System Performance Metrics}{38}{}%
+\contentsline {subsection}{\numberline {13.6}Difficulties and Limitations}{38}{}%
+\contentsline {subsubsection}{\numberline {13.6.1}Sensor Limitations}{38}{}%
+\contentsline {subsubsection}{\numberline {13.6.2}Motor Control Challenges}{38}{}%
+\contentsline {subsubsection}{\numberline {13.6.3}Movement Constraints}{39}{}%
+\contentsline {subsubsection}{\numberline {13.6.4}Power Management}{39}{}%
+\contentsline {section}{\numberline {14}Possible Future Improvements}{40}{}%
+\contentsline {subsection}{\numberline {14.1}Sensor Enhancements}{40}{}%
+\contentsline {subsection}{\numberline {14.2}Motor Control Optimization}{40}{}%
+\contentsline {subsection}{\numberline {14.3}Power Management}{40}{}%
+\contentsline {subsection}{\numberline {14.4}Software Architecture}{41}{}%
+\contentsline {subsection}{\numberline {14.5}User Interface}{41}{}%
+\contentsline {section}{\numberline {15}Final considerations}{42}{}%
+\contentsline {subsection}{\numberline {15.1}Localization Implementation}{42}{}%
+\contentsline {section}{\numberline {16}Testing Conclusions}{44}{}%
+\contentsline {subsubsection}{\numberline {16.0.1}Achievements}{44}{}%
+\contentsline {subsubsection}{\numberline {16.0.2}Lessons Learned}{44}{}%
+\contentsline {subsubsection}{\numberline {16.0.3}Design Validation}{44}{}%
+\contentsline {subsubsection}{\numberline {16.0.4}Development Impact}{44}{}%
