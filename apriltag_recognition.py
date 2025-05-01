@@ -61,7 +61,7 @@ def setup_serial():
 def setup_camera():
     picam2 = Picamera2()
     config = picam2.create_preview_configuration(
-        main={"size": (1024, 576), "format": "RGB888"},
+        main={"size": (576, 1024), "format": "RGB888"},
         controls={
             "FrameDurationLimits": (100000, 100000),
             "AnalogueGain": 4.0,
@@ -99,6 +99,7 @@ try:
 
     while True:
         frame = picam2.capture_array()
+        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         processed = preprocess_image(frame)
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
 
