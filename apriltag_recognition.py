@@ -27,7 +27,7 @@ CALIBRATION_DISTANCE_CM = 100  # Calibration distance
 CALIBRATION_MODE = False  # Set to True when calibrating
 
 # === Robot Control Parameters ===
-DISTANCE_THRESHOLD = 45  # Robot stops when tag appears closer than this
+DISTANCE_THRESHOLD = 10  # Robot stops when tag appears closer than this
 CENTER_TOLERANCE_RATIO = 0.15  # Allowable deviation from center before turning
 
 # === Communication Settings ===
@@ -104,24 +104,34 @@ def estimate_tag_size(corners):
 
 def get_direction(detection, frame_width, distance_threshold):
     """
-    Determine robot movement direction based on tag position
+    Determine robot movement direction based on tag position and distance
     Returns: 
-        - 'S' (Stop) when too close
+        - 'S' (Stop) when at optimal distance and centered
         - 'L' (Left) when tag is left of center
         - 'R' (Right) when tag is right of center
-        - 'F' (Forward) when tag is centered
+        - 'F' (Forward) when tag is centered but too far
+        - 'B' (Back) when tag is too close
     """
     center_x = detection.center[0]
     tag_size = estimate_tag_size(detection.corners)
     frame_center = frame_width // 2
     center_tolerance = frame_width * CENTER_TOLERANCE_RATIO
 
-    if tag_size >= distance_threshold:
-        return 'S', tag_size
+    # First check if we're too close
+    if tag_size >= distance_threshold * 1.2:  # Add 20% buffer
+        return 'B', tag_size
+
+    # Check horizontal positioning
     if center_x < frame_center - center_tolerance:
         return 'L', tag_size
     elif center_x > frame_center + center_tolerance:
         return 'R', tag_size
+
+    # If we're centered, check distance
+    if tag_size >= distance_threshold * 0.9:  # Within 90% of target distance
+        return 'S', tag_size
+
+    # If we're centered but too far, move forward
     return 'F', tag_size
 
 
