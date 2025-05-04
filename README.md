@@ -43,7 +43,7 @@ A robust localization and navigation system for an omnidirectional robot featuri
 - 6x HC-SR04 ultrasonic sensors
 - MPU6050 IMU
 - Raspberry Pi (for vision processing)
-- Arduino Mega (for motor control and sensor fusion)
+- Elegoo Mega (for motor control and sensor fusion)
 
 ### Software Components
 
