@@ -12,6 +12,11 @@ import serial
 import numpy as np
 from threading import Thread
 import queue
+from flask import Flask, Response, render_template
+import threading
+
+# Initialize Flask app
+app = Flask(__name__)
 
 # Camera settings for optimal tag detection while maintaining performance
 CAMERA_WIDTH = 224
@@ -35,19 +40,57 @@ SERIAL_PORT = '/dev/ttyACM0'  # Arduino USB port (typically ACM0 on Linux)
 BAUD_RATE = 9600
 VERBOSE = True  # Set to True for detailed console output
 
-# Display settings
-SHOW_FEED = True  # Shows camera feed with AR overlay. Disable on headless setups
-
 # Physical setup parameters
 TAG_PHYSICAL_SIZE = 0.15  # AprilTag size in meters
 last_direction = None
 
 # Performance optimization settings
-# These settings are tuned for Raspberry Pi 3 B+ to balance speed and reliability
 FRAME_QUEUE_SIZE = 2  # Number of frames to buffer
 frame_queue = queue.Queue(maxsize=FRAME_QUEUE_SIZE)
 USE_THREADING = True  # Enables parallel processing of frames
 SKIP_FRAMES = 2  # Process every second frame to reduce CPU load
+
+# Global variable to store the latest frame
+global_frame = None
+frame_lock = threading.Lock()
+
+# Flask routes
+@app.route('/')
+def index():
+    return """
+    <html>
+        <head>
+            <title>AprilTag Camera Feed</title>
+            <style>
+                body { text-align: center; background: #333; color: white; }
+                img { max-width: 100%; height: auto; }
+            </style>
+        </head>
+        <body>
+            <h1>AprilTag Camera Feed</h1>
+            <img src="/video_feed">
+        </body>
+    </html>
+    """
+
+def generate_frames():
+    while True:
+        with frame_lock:
+            if global_frame is not None:
+                # Encode the frame as JPEG
+                ret, buffer = cv2.imencode('.jpg', global_frame)
+                if not ret:
+                    continue
+                # Convert to bytes and yield for streaming
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        time.sleep(0.1)  # Reduce CPU usage
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 def estimate_tag_size(corners):
@@ -173,110 +216,112 @@ def preprocess_image(frame):
     return gray
 
 
-# Initialize hardware connections
-arduino = setup_serial() if SEND_TO_ARDUINO else None
-picam2 = setup_camera()
+def update_global_frame(frame):
+    global global_frame
+    with frame_lock:
+        global_frame = frame.copy()
 
-# Configure AprilTag detector with optimized parameters for our setup
-detector = Detector(
-    families="tag36h11",  # Standard tag family, good balance of reliability and uniqueness
-    nthreads=2,  # Use 2 threads on Pi 3 B+
-    quad_decimate=1.0,  # Full resolution for accuracy
-    quad_sigma=0.6,  # Gentle smoothing for noise reduction
-    refine_edges=1,  # Improve edge detection for better accuracy
-    decode_sharpening=0.5,  # Moderate sharpening to help detect tags
-    debug=False
-)
 
-print("AprilTag tracking started")
+# Main processing function
+def main_processing():
+    global global_frame
+    
+    arduino = setup_serial() if SEND_TO_ARDUINO else None
+    picam2 = setup_camera()
+    
+    detector = Detector(
+        families="tag36h11",
+        nthreads=2,
+        quad_decimate=1.0,
+        quad_sigma=0.6,
+        refine_edges=1,
+        decode_sharpening=0.5,
+        debug=False
+    )
 
-# Main processing loop
-try:
+    print("AprilTag tracking started")
+    
     frame_count = 0
     detection_interval = 0.1
-
+    
     if USE_THREADING:
         stream = StreamCapture(picam2)
         stream.start()
-
-    while True:
-        if USE_THREADING:
-            try:
-                frame = frame_queue.get(timeout=1.0)
-            except queue.Empty:
-                continue
-        else:
-            frame = picam2.capture_array()
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-
-        frame_count += 1
-        if frame_count % SKIP_FRAMES != 0:  # Skip frames for better performance
-            continue
-
-        processed = preprocess_image(frame)
-        detections = detector.detect(processed)
-
-        if detections:
-            main_tag = min(detections, key=lambda d: abs(
-                d.center[0] - frame.shape[1]/2))
-            tag_size_px = estimate_tag_size(main_tag.corners)
-            direction, _ = get_direction(
-                main_tag, frame.shape[1], DISTANCE_THRESHOLD)
-
-            if CALIBRATION_MODE:
-                focal_length = (
-                    tag_size_px * CALIBRATION_DISTANCE_CM) / TAG_REAL_SIZE_CM
-                print(
-                    f"[CALIBRATION] Estimated focal length: {focal_length:.1f} px")
-                distance_cm = CALIBRATION_DISTANCE_CM
+    
+    try:
+        while True:
+            if USE_THREADING:
+                try:
+                    frame = frame_queue.get(timeout=1.0)
+                except queue.Empty:
+                    continue
             else:
-                distance_cm = (FOCAL_LENGTH_PX *
-                               TAG_REAL_SIZE_CM) / tag_size_px
+                frame = picam2.capture_array()
+                frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
-            detection_interval = max(0.05, 0.2 - tag_size_px / 1000)
+            frame_count += 1
+            if frame_count % SKIP_FRAMES != 0:
+                continue
 
-            if direction != last_direction:
-                if SEND_TO_ARDUINO and arduino:
-                    arduino.write(direction.encode())
-                    arduino.flush()
-                last_direction = direction
+            processed = preprocess_image(frame)
+            detections = detector.detect(processed)
 
-            if VERBOSE:
-                print(
-                    f"Tag {main_tag.tag_id}: {direction} | Size: {tag_size_px:.1f}px | Est. Distance: {distance_cm:.1f} cm")
+            if detections:
+                main_tag = min(detections, key=lambda d: abs(
+                    d.center[0] - frame.shape[1]/2))
+                tag_size_px = estimate_tag_size(main_tag.corners)
+                direction, _ = get_direction(
+                    main_tag, frame.shape[1], DISTANCE_THRESHOLD)
 
-            # === Draw tag outline and ID ===
-            pts = main_tag.corners.astype(int)
-            for i in range(4):
-                cv2.line(frame, tuple(pts[i]), tuple(
-                    pts[(i+1) % 4]), (0, 255, 0), 2)
-            cv2.putText(frame, f"ID:{main_tag.tag_id} D:{int(distance_cm)}cm", tuple(pts[0]),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                if CALIBRATION_MODE:
+                    focal_length = (
+                        tag_size_px * CALIBRATION_DISTANCE_CM) / TAG_REAL_SIZE_CM
+                    print(
+                        f"[CALIBRATION] Estimated focal length: {focal_length:.1f} px")
+                    distance_cm = CALIBRATION_DISTANCE_CM
+                else:
+                    distance_cm = (FOCAL_LENGTH_PX *
+                                   TAG_REAL_SIZE_CM) / tag_size_px
 
-        else:
-            detection_interval = min(0.5, detection_interval + 0.05)
-            if SEND_TO_ARDUINO and arduino:
-                arduino.write(b'S')
-            if VERBOSE:
-                print("Searching...")
+                if direction != last_direction:
+                    if SEND_TO_ARDUINO and arduino:
+                        arduino.write(direction.encode())
+                        arduino.flush()
+                    last_direction = direction
 
-        # === Show the camera view ===
-        if SHOW_FEED:
-            cv2.imshow("AprilTag View", frame)
-            if cv2.waitKey(1) == 27:  # ESC key
-                break
+                if VERBOSE:
+                    print(
+                        f"Tag {main_tag.tag_id}: {direction} | Size: {tag_size_px:.1f}px | Est. Distance: {distance_cm:.1f} cm")
 
-        time.sleep(detection_interval)
-except KeyboardInterrupt:
-    print("\nShutting down...")
+                # Draw tag outline and ID
+                pts = main_tag.corners.astype(int)
+                for i in range(4):
+                    cv2.line(frame, tuple(pts[i]), tuple(
+                        pts[(i+1) % 4]), (0, 255, 0), 2)
+                cv2.putText(frame, f"ID:{main_tag.tag_id} D:{int(distance_cm)}cm", tuple(pts[0]),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-finally:
-    if USE_THREADING:
-        stream.stop()
-    picam2.stop()
-    if arduino:
-        arduino.close()
-    if 'detector' in locals():
-        del detector
-    if SHOW_FEED:
-        cv2.destroyAllWindows()
+            # Update the global frame for streaming
+            update_global_frame(frame)
+            time.sleep(detection_interval)
+
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        if USE_THREADING:
+            stream.stop()
+        picam2.stop()
+        if arduino:
+            arduino.close()
+        if 'detector' in locals():
+            del detector
+
+
+if __name__ == '__main__':
+    # Start the processing in a separate thread
+    processing_thread = threading.Thread(target=main_processing)
+    processing_thread.daemon = True
+    processing_thread.start()
+    
+    # Run the Flask app
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
