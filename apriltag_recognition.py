@@ -1,8 +1,6 @@
 """
 AprilTag Recognition System for Robot Navigation
 This script uses a Raspberry Pi camera to detect AprilTags and guide robot movement.
-It's optimized for Raspberry Pi 3 B+ with performance considerations for real-time processing.
-Can run in cloud environment with mock camera for demonstration.
 """
 
 import cv2
@@ -14,7 +12,7 @@ import queue
 from flask import Flask, Response, render_template
 import threading
 
-# Check if running on Raspberry Pi or in cloud
+# Check if running on Raspberry Pi
 IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
 
 if IS_RASPBERRY_PI:
@@ -67,18 +65,126 @@ def index():
     return """
     <html>
         <head>
-            <title>Camera Feed</title>
+            <title>PiCamera Feed</title>
             <style>
-                body { text-align: center; background: #333; color: white; }
-                img { max-width: 100%; height: auto; }
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                    background: #1e1e1e;
+                    color: #fff;
+                }
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
+                .video-container {
+                    position: relative;
+                    background: #2d2d2d;
+                    padding: 20px;
+                    border-radius: 10px;
+                    margin-bottom: 20px;
+                }
+                .feed {
+                    width: 100%;
+                    max-width: 960px;
+                    height: auto;
+                    display: block;
+                    margin: 0 auto;
+                    border-radius: 5px;
+                }
+                .controls {
+                    margin-top: 20px;
+                    display: flex;
+                    gap: 10px;
+                    justify-content: center;
+                }
+                .status {
+                    background: #2d2d2d;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin-top: 10px;
+                }
+                h1 {
+                    text-align: center;
+                    color: #4CAF50;
+                    margin-bottom: 30px;
+                }
+                .button {
+                    background: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-size: 16px;
+                }
+                .button:hover {
+                    background: #45a049;
+                }
+                .info {
+                    margin-top: 10px;
+                    padding: 10px;
+                    background: rgba(0,0,0,0.2);
+                    border-radius: 5px;
+                }
             </style>
+            <script>
+                function reloadFeed() {
+                    const img = document.getElementById('camera-feed');
+                    img.src = '/video_feed?' + new Date().getTime();
+                }
+                
+                function checkConnection() {
+                    fetch('/health')
+                        .then(response => {
+                            document.getElementById('status').style.color = '#4CAF50';
+                            document.getElementById('status').textContent = 'Camera Connected';
+                        })
+                        .catch(error => {
+                            document.getElementById('status').style.color = '#ff0000';
+                            document.getElementById('status').textContent = 'Camera Disconnected';
+                        });
+                }
+
+                // Check connection status every 5 seconds
+                setInterval(checkConnection, 5000);
+                window.onload = checkConnection;
+            </script>
         </head>
         <body>
-            <h1></h1>
-            <img src="/video_feed">
+            <div class="container">
+                <h1>PiCamera Live Feed</h1>
+                <div class="video-container">
+                    <img id="camera-feed" class="feed" src="/video_feed" alt="Camera Feed">
+                    <div class="controls">
+                        <button class="button" onclick="reloadFeed()">Refresh Feed</button>
+                    </div>
+                </div>
+                <div class="status">
+                    <p>Status: <span id="status">Checking connection...</span></p>
+                    <div class="info">
+                        <p>✓ Access this feed at: <strong>http://localhost:5000</strong></p>
+                        <p>✓ Resolution: """ + str(CAMERA_WIDTH) + "x" + str(CAMERA_HEIGHT) + """</p>
+                        <p>✓ Frame processing enabled: """ + str(USE_THREADING) + """</p>
+                    </div>
+                </div>
+            </div>
         </body>
     </html>
     """
+
+
+@app.route('/health')
+def health():
+    """Simple health check endpoint"""
+    if IS_RASPBERRY_PI:
+        try:
+            picam2.capture_array()
+            return "OK", 200
+        except Exception as e:
+            return str(e), 500
+    return "OK", 200
 
 
 def generate_frames():
@@ -187,51 +293,29 @@ class StreamCapture:
             self.thread.join()
 
 
-class MockCamera:
-    """Mock camera class for cloud deployment"""
-
-    def __init__(self):
-        self.frame = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=np.uint8)
-        # Add a test pattern or message
-        cv2.putText(self.frame, "Cloud Demo Mode - No Camera", (50, CAMERA_HEIGHT//2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-    def capture_array(self):
-        return self.frame.copy()
-
-    def start(self):
-        pass
-
-    def stop(self):
-        pass
-
-
 def setup_camera():
     """
-    Initializes the Pi Camera or returns a mock camera for cloud deployment
+    Initializes the Pi Camera
     """
-    if IS_RASPBERRY_PI:
-        picam2 = Picamera2()
-        config = picam2.create_preview_configuration(
-            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-            controls={
-                # ~60fps for faster updates
-                "FrameDurationLimits": (16666, 16666),
-                "AnalogueGain": 4.0,                    # Balanced for both close and far detection
-                "ExposureTime": 15000,                  # Faster exposure for clearer images
-                "AwbEnable": 0,                         # Disabled for consistent colors
-                "Contrast": 1.8,                        # Increased contrast for better edge detection
-                "Sharpness": 2.5,                       # Increased sharpness for better tag detection
-                "Brightness": 0.5,                      # Balanced brightness
-                "NoiseReductionMode": 2                 # Enhanced noise reduction
-            }
-        )
-        picam2.configure(config)
-        picam2.start()
-        time.sleep(0.5)  # Reduced warm-up time
-        return picam2
-    else:
-        return MockCamera()
+    picam2 = Picamera2()
+    config = picam2.create_preview_configuration(
+        main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+        controls={
+            # ~60fps for faster updates
+            "FrameDurationLimits": (16666, 16666),
+            "AnalogueGain": 4.0,                    # Balanced for both close and far detection
+            "ExposureTime": 15000,                  # Faster exposure for clearer images
+            "AwbEnable": 0,                         # Disabled for consistent colors
+            "Contrast": 1.8,                        # Increased contrast for better edge detection
+            "Sharpness": 2.5,                       # Increased sharpness for better tag detection
+            "Brightness": 0.5,                      # Balanced brightness
+            "NoiseReductionMode": 2                 # Enhanced noise reduction
+        }
+    )
+    picam2.configure(config)
+    picam2.start()
+    time.sleep(0.5)  # Reduced warm-up time
+    return picam2
 
 
 def preprocess_image(frame):
