@@ -8,70 +8,69 @@ import cv2
 import time
 from picamera2 import Picamera2
 from pupil_apriltags import Detector
-import serial
 import numpy as np
 from threading import Thread
 import queue
 from flask import Flask, Response, render_template
 import threading
+from apriltag_communication import ArduinoCommunicator
+
+# === Camera Configuration ===
+CAMERA_WIDTH = 224
+CAMERA_HEIGHT = 224
+FOCAL_LENGTH_PX = 365
+
+# === AprilTag Configuration ===
+TAG_REAL_SIZE_CM = 15  # Physical size of the AprilTag
+TAG_PHYSICAL_SIZE = 0.15  # AprilTag size in meters
+CALIBRATION_DISTANCE_CM = 100  # Calibration distance
+CALIBRATION_MODE = False  # Set to True when calibrating
+
+# === Robot Control Parameters ===
+DISTANCE_THRESHOLD = 45  # Robot stops when tag appears closer than this
+CENTER_TOLERANCE_RATIO = 0.15  # Allowable deviation from center before turning
+
+# === Communication Settings ===
+SEND_TO_ARDUINO = False  # Enable/disable Arduino communication
+SERIAL_PORT = '/dev/ttyACM0'  # Arduino serial port
+BAUD_RATE = 9600  # Serial communication speed
+
+# === Performance Optimization ===
+FRAME_QUEUE_SIZE = 2  # Frame buffer size
+USE_THREADING = True  # Enable parallel processing
+SKIP_FRAMES = 2  # Process every nth frame
+VERBOSE = True  # Enable detailed logging
+
+# === Global State Variables ===
+global_frame = None
+frame_lock = threading.Lock()
+arduino_comm = None
+frame_queue = queue.Queue(maxsize=FRAME_QUEUE_SIZE)
 
 # Initialize Flask app
 app = Flask(__name__)
 
-# Camera settings for optimal tag detection while maintaining performance
-CAMERA_WIDTH = 224
-CAMERA_HEIGHT = 224
-# Camera's focal length (in pixels) calibrated for our 224x224 resolution
-FOCAL_LENGTH_PX = 365
-
-# Camera calibration settings
-# Set CALIBRATION_MODE to True when you need to recalibrate the camera
-CALIBRATION_MODE = False
-TAG_REAL_SIZE_CM = 15  # Physical size of the AprilTag (15cm x 15cm)
-# Place the tag exactly 100cm from camera when calibrating
-CALIBRATION_DISTANCE_CM = 100
-
-# Robot control settings
-SEND_TO_ARDUINO = False  # Set to True when connected to the Arduino robot
-# Robot stops when tag appears larger than this (closer)
-DISTANCE_THRESHOLD = 45
-CENTER_TOLERANCE_RATIO = 0.15  # How far from center the tag can be before turning
-SERIAL_PORT = '/dev/ttyACM0'  # Arduino USB port (typically ACM0 on Linux)
-BAUD_RATE = 9600
-VERBOSE = True  # Set to True for detailed console output
-
-# Physical setup parameters
-TAG_PHYSICAL_SIZE = 0.15  # AprilTag size in meters
-last_direction = None
-
-# Performance optimization settings
-FRAME_QUEUE_SIZE = 2  # Number of frames to buffer
-frame_queue = queue.Queue(maxsize=FRAME_QUEUE_SIZE)
-USE_THREADING = True  # Enables parallel processing of frames
-SKIP_FRAMES = 2  # Process every second frame to reduce CPU load
-
-# Global variable to store the latest frame
-global_frame = None
-frame_lock = threading.Lock()
-
 # Flask routes
+
+
 @app.route('/')
 def index():
     return """
     <html>
         <head>
-            <title>AprilTag Camera Feed</title>
+            <title>Camera Feed</title>
             <style>
                 body { text-align: center; background: #333; color: white; }
                 img { max-width: 100%; height: auto; }
             </style>
         </head>
         <body>
-            <h1>AprilTag Camera Feed</h1>
+            <h1></h1>
             <img src="/video_feed">
         </body>
     </html>
     """
+
 
 def generate_frames():
     while True:
@@ -86,6 +85,7 @@ def generate_frames():
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         time.sleep(0.1)  # Reduce CPU usage
+
 
 @app.route('/video_feed')
 def video_feed():
@@ -123,21 +123,6 @@ def get_direction(detection, frame_width, distance_threshold):
     elif center_x > frame_center + center_tolerance:
         return 'R', tag_size
     return 'F', tag_size
-
-
-def setup_serial():
-    """
-    Establish connection to Arduino via serial port
-    Returns the serial object if successful, None otherwise
-    """
-    try:
-        arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2)
-        print("Arduino connected")
-        return arduino
-    except Exception as e:
-        print(f"Serial error: {e}")
-        return None
 
 
 class StreamCapture:
@@ -224,11 +209,14 @@ def update_global_frame(frame):
 
 # Main processing function
 def main_processing():
-    global global_frame
-    
-    arduino = setup_serial() if SEND_TO_ARDUINO else None
+    global global_frame, arduino_comm
+
+    if SEND_TO_ARDUINO:
+        arduino_comm = ArduinoCommunicator(SERIAL_PORT, BAUD_RATE)
+        arduino_comm.connect()
+
     picam2 = setup_camera()
-    
+
     detector = Detector(
         families="tag36h11",
         nthreads=2,
@@ -240,14 +228,14 @@ def main_processing():
     )
 
     print("AprilTag tracking started")
-    
+
     frame_count = 0
     detection_interval = 0.1
-    
+
     if USE_THREADING:
         stream = StreamCapture(picam2)
         stream.start()
-    
+
     try:
         while True:
             if USE_THREADING:
@@ -283,11 +271,10 @@ def main_processing():
                     distance_cm = (FOCAL_LENGTH_PX *
                                    TAG_REAL_SIZE_CM) / tag_size_px
 
-                if direction != last_direction:
-                    if SEND_TO_ARDUINO and arduino:
-                        arduino.write(direction.encode())
-                        arduino.flush()
-                    last_direction = direction
+                # Send commands to Arduino through the communicator
+                if SEND_TO_ARDUINO and arduino_comm:
+                    arduino_comm.process_tag_data(
+                        main_tag.tag_id, distance_cm, direction)
 
                 if VERBOSE:
                     print(
@@ -311,8 +298,8 @@ def main_processing():
         if USE_THREADING:
             stream.stop()
         picam2.stop()
-        if arduino:
-            arduino.close()
+        if arduino_comm:
+            arduino_comm.close()
         if 'detector' in locals():
             del detector
 
@@ -322,6 +309,6 @@ if __name__ == '__main__':
     processing_thread = threading.Thread(target=main_processing)
     processing_thread.daemon = True
     processing_thread.start()
-    
+
     # Run the Flask app
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
