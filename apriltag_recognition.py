@@ -117,8 +117,11 @@ def get_direction(detection, frame_width, distance_threshold):
     frame_center = frame_width // 2
     center_tolerance = frame_width * CENTER_TOLERANCE_RATIO
 
-    # First check if we're too close
-    if tag_size >= distance_threshold * 1.2:  # Add 20% buffer
+    # Calculate actual distance
+    distance_cm = (FOCAL_LENGTH_PX * TAG_REAL_SIZE_CM) / tag_size
+
+    # Check if we're too close (distance is less than threshold)
+    if distance_cm < DISTANCE_THRESHOLD:
         return 'B', tag_size
 
     # Check horizontal positioning
@@ -127,8 +130,8 @@ def get_direction(detection, frame_width, distance_threshold):
     elif center_x > frame_center + center_tolerance:
         return 'R', tag_size
 
-    # If we're centered, check distance
-    if tag_size >= distance_threshold * 0.9:  # Within 90% of target distance
+    # If we're centered, check if we're at the right distance
+    if abs(distance_cm - DISTANCE_THRESHOLD) <= DISTANCE_THRESHOLD * 0.1:  # Within 10% of target distance
         return 'S', tag_size
 
     # If we're centered but too far, move forward
