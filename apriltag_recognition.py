@@ -2,18 +2,25 @@
 AprilTag Recognition System for Robot Navigation
 This script uses a Raspberry Pi camera to detect AprilTags and guide robot movement.
 It's optimized for Raspberry Pi 3 B+ with performance considerations for real-time processing.
+Can run in cloud environment with mock camera for demonstration.
 """
 
 import cv2
 import time
-from picamera2 import Picamera2
-from pupil_apriltags import Detector
+import os
 import numpy as np
 from threading import Thread
 import queue
 from flask import Flask, Response, render_template
 import threading
-from apriltag_communication import ArduinoCommunicator
+
+# Check if running on Raspberry Pi or in cloud
+IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
+
+if IS_RASPBERRY_PI:
+    from picamera2 import Picamera2
+    from pupil_apriltags import Detector
+    from apriltag_communication import ArduinoCommunicator
 
 # === Camera Configuration ===
 CAMERA_WIDTH = 1280  # Increased resolution for better far detection
@@ -180,28 +187,51 @@ class StreamCapture:
             self.thread.join()
 
 
+class MockCamera:
+    """Mock camera class for cloud deployment"""
+
+    def __init__(self):
+        self.frame = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=np.uint8)
+        # Add a test pattern or message
+        cv2.putText(self.frame, "Cloud Demo Mode - No Camera", (50, CAMERA_HEIGHT//2),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+    def capture_array(self):
+        return self.frame.copy()
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
 def setup_camera():
     """
-    Initializes the Pi Camera with optimized settings for AprilTag detection
+    Initializes the Pi Camera or returns a mock camera for cloud deployment
     """
-    picam2 = Picamera2()
-    config = picam2.create_preview_configuration(
-        main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-        controls={
-            "FrameDurationLimits": (16666, 16666),  # ~60fps for faster updates
-            "AnalogueGain": 4.0,                    # Balanced for both close and far detection
-            "ExposureTime": 15000,                  # Faster exposure for clearer images
-            "AwbEnable": 0,                         # Disabled for consistent colors
-            "Contrast": 1.8,                        # Increased contrast for better edge detection
-            "Sharpness": 2.5,                       # Increased sharpness for better tag detection
-            "Brightness": 0.5,                      # Balanced brightness
-            "NoiseReductionMode": 2                 # Enhanced noise reduction
-        }
-    )
-    picam2.configure(config)
-    picam2.start()
-    time.sleep(0.5)  # Reduced warm-up time
-    return picam2
+    if IS_RASPBERRY_PI:
+        picam2 = Picamera2()
+        config = picam2.create_preview_configuration(
+            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+            controls={
+                # ~60fps for faster updates
+                "FrameDurationLimits": (16666, 16666),
+                "AnalogueGain": 4.0,                    # Balanced for both close and far detection
+                "ExposureTime": 15000,                  # Faster exposure for clearer images
+                "AwbEnable": 0,                         # Disabled for consistent colors
+                "Contrast": 1.8,                        # Increased contrast for better edge detection
+                "Sharpness": 2.5,                       # Increased sharpness for better tag detection
+                "Brightness": 0.5,                      # Balanced brightness
+                "NoiseReductionMode": 2                 # Enhanced noise reduction
+            }
+        )
+        picam2.configure(config)
+        picam2.start()
+        time.sleep(0.5)  # Reduced warm-up time
+        return picam2
+    else:
+        return MockCamera()
 
 
 def preprocess_image(frame):
@@ -241,21 +271,22 @@ def update_global_frame(frame):
 def main_processing():
     global global_frame, arduino_comm
 
-    if SEND_TO_ARDUINO:
+    if SEND_TO_ARDUINO and IS_RASPBERRY_PI:
         arduino_comm = ArduinoCommunicator(SERIAL_PORT, BAUD_RATE)
         arduino_comm.connect()
 
     picam2 = setup_camera()
 
-    detector = Detector(
-        families="tag36h11",
-        nthreads=4,            # Increased thread count for faster processing
-        quad_decimate=1.0,     # No decimation for maximum accuracy
-        quad_sigma=0.4,        # Reduced blur for better edge detection
-        refine_edges=True,
-        decode_sharpening=0.8,  # Increased sharpening for better detection
-        debug=False
-    )
+    if IS_RASPBERRY_PI:
+        detector = Detector(
+            families="tag36h11",
+            nthreads=4,            # Increased thread count for faster processing
+            quad_decimate=1.0,     # No decimation for maximum accuracy
+            quad_sigma=0.4,        # Reduced blur for better edge detection
+            refine_edges=True,
+            decode_sharpening=0.8,  # Increased sharpening for better detection
+            debug=False
+        )
 
     print("AprilTag tracking started")
 
@@ -281,42 +312,43 @@ def main_processing():
             if frame_count % SKIP_FRAMES != 0:
                 continue
 
-            processed = preprocess_image(frame)
-            detections = detector.detect(processed)
+            if IS_RASPBERRY_PI:
+                processed = preprocess_image(frame)
+                detections = detector.detect(processed)
 
-            if detections:
-                main_tag = min(detections, key=lambda d: abs(
-                    d.center[0] - frame.shape[1]/2))
-                tag_size_px = estimate_tag_size(main_tag.corners)
-                direction, _ = get_direction(
-                    main_tag, frame.shape[1], DISTANCE_THRESHOLD)
+                if detections:
+                    main_tag = min(detections, key=lambda d: abs(
+                        d.center[0] - frame.shape[1]/2))
+                    tag_size_px = estimate_tag_size(main_tag.corners)
+                    direction, _ = get_direction(
+                        main_tag, frame.shape[1], DISTANCE_THRESHOLD)
 
-                if CALIBRATION_MODE:
-                    focal_length = (
-                        tag_size_px * CALIBRATION_DISTANCE_CM) / TAG_REAL_SIZE_CM
-                    print(
-                        f"[CALIBRATION] Estimated focal length: {focal_length:.1f} px")
-                    distance_cm = CALIBRATION_DISTANCE_CM
-                else:
-                    distance_cm = (FOCAL_LENGTH_PX *
-                                   TAG_REAL_SIZE_CM) / tag_size_px
+                    if CALIBRATION_MODE:
+                        focal_length = (
+                            tag_size_px * CALIBRATION_DISTANCE_CM) / TAG_REAL_SIZE_CM
+                        print(
+                            f"[CALIBRATION] Estimated focal length: {focal_length:.1f} px")
+                        distance_cm = CALIBRATION_DISTANCE_CM
+                    else:
+                        distance_cm = (FOCAL_LENGTH_PX *
+                                       TAG_REAL_SIZE_CM) / tag_size_px
 
-                # Send commands to Arduino through the communicator
-                if SEND_TO_ARDUINO and arduino_comm:
-                    arduino_comm.process_tag_data(
-                        main_tag.tag_id, distance_cm, direction)
+                    # Send commands to Arduino through the communicator
+                    if SEND_TO_ARDUINO and arduino_comm:
+                        arduino_comm.process_tag_data(
+                            main_tag.tag_id, distance_cm, direction)
 
-                if VERBOSE:
-                    print(
-                        f"Tag {main_tag.tag_id}: {direction} | Size: {tag_size_px:.1f}px | Est. Distance: {distance_cm:.1f} cm")
+                    if VERBOSE:
+                        print(
+                            f"Tag {main_tag.tag_id}: {direction} | Size: {tag_size_px:.1f}px | Est. Distance: {distance_cm:.1f} cm")
 
-                # Draw tag outline and ID
-                pts = main_tag.corners.astype(int)
-                for i in range(4):
-                    cv2.line(frame, tuple(pts[i]), tuple(
-                        pts[(i+1) % 4]), (0, 255, 0), 2)
-                cv2.putText(frame, f"ID:{main_tag.tag_id} D:{int(distance_cm)}cm", tuple(pts[0]),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    # Draw tag outline and ID
+                    pts = main_tag.corners.astype(int)
+                    for i in range(4):
+                        cv2.line(frame, tuple(pts[i]), tuple(
+                            pts[(i+1) % 4]), (0, 255, 0), 2)
+                    cv2.putText(frame, f"ID:{main_tag.tag_id} D:{int(distance_cm)}cm", tuple(pts[0]),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
             # Update the global frame for streaming
             update_global_frame(frame)
@@ -330,7 +362,7 @@ def main_processing():
         picam2.stop()
         if arduino_comm:
             arduino_comm.close()
-        if 'detector' in locals():
+        if IS_RASPBERRY_PI and 'detector' in locals():
             del detector
 
 
