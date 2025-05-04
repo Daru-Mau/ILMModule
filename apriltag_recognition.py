@@ -16,9 +16,11 @@ import threading
 from apriltag_communication import ArduinoCommunicator
 
 # === Camera Configuration ===
-CAMERA_WIDTH = 224
-CAMERA_HEIGHT = 224
-FOCAL_LENGTH_PX = 365
+CAMERA_WIDTH = 1280  # Increased resolution for better far detection
+CAMERA_HEIGHT = 720
+FOCAL_LENGTH_PX = 780  # Adjusted focal length for better distance calculation
+MIN_DETECTION_DISTANCE = 5  # Reduced minimum detection distance in cm
+MAX_DETECTION_DISTANCE = 300  # Increased maximum detection distance in cm
 
 # === AprilTag Configuration ===
 TAG_REAL_SIZE_CM = 15  # Physical size of the AprilTag
@@ -27,8 +29,8 @@ CALIBRATION_DISTANCE_CM = 100  # Calibration distance
 CALIBRATION_MODE = False  # Set to True when calibrating
 
 # === Robot Control Parameters ===
-DISTANCE_THRESHOLD = 10  # Robot stops when tag appears closer than this
-CENTER_TOLERANCE_RATIO = 0.15  # Allowable deviation from center before turning
+DISTANCE_THRESHOLD = 5  # Reduced to allow closer approach
+CENTER_TOLERANCE_RATIO = 0.2  # Increased tolerance for easier centering
 
 # === Communication Settings ===
 SEND_TO_ARDUINO = False  # Enable/disable Arduino communication
@@ -180,37 +182,52 @@ class StreamCapture:
 
 def setup_camera():
     """
-    Initializes the Pi Camera with optimized settings for AprilTag detection:
-    - Increased contrast and sharpness for better tag edges
-    - Fixed exposure for consistent detection
-    - Disabled auto white balance for stability
+    Initializes the Pi Camera with optimized settings for AprilTag detection
     """
     picam2 = Picamera2()
     config = picam2.create_preview_configuration(
         main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
         controls={
-            "FrameDurationLimits": (33333, 33333),  # ~30fps
-            "AnalogueGain": 8.0,  # Increased for better low-light performance
-            "ExposureTime": 20000,  # Reduced for faster frame rate
-            "AwbEnable": 0,
-            "Contrast": 1.5,
-            "Sharpness": 2.0  # Increased for better tag detection
+            "FrameDurationLimits": (16666, 16666),  # ~60fps for faster updates
+            "AnalogueGain": 4.0,                    # Balanced for both close and far detection
+            "ExposureTime": 15000,                  # Faster exposure for clearer images
+            "AwbEnable": 0,                         # Disabled for consistent colors
+            "Contrast": 1.8,                        # Increased contrast for better edge detection
+            "Sharpness": 2.5,                       # Increased sharpness for better tag detection
+            "Brightness": 0.5,                      # Balanced brightness
+            "NoiseReductionMode": 2                 # Enhanced noise reduction
         }
     )
     picam2.configure(config)
     picam2.start()
-    time.sleep(1)  # Reduced warm-up time
+    time.sleep(0.5)  # Reduced warm-up time
     return picam2
 
 
 def preprocess_image(frame):
     """
-    Prepare camera frame for AprilTag detection:
-    1. Convert to grayscale for faster processing
-    2. Equalize histogram to improve contrast in varying lighting
+    Enhanced image preprocessing pipeline for better AprilTag detection:
+    1. Convert to grayscale
+    2. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    3. Apply mild denoising
+    4. Enhance edges
     """
     gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-    gray = cv2.equalizeHist(gray)  # Improve contrast
+
+    # Apply CLAHE for better contrast in varying lighting conditions
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
+    # Denoise while preserving edges
+    gray = cv2.fastNlMeansDenoising(
+        gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
+
+    # Enhance edges
+    kernel = np.array([[-1, -1, -1],
+                      [-1, 9, -1],
+                      [-1, -1, -1]])
+    gray = cv2.filter2D(gray, -1, kernel)
+
     return gray
 
 
@@ -232,11 +249,11 @@ def main_processing():
 
     detector = Detector(
         families="tag36h11",
-        nthreads=2,
-        quad_decimate=1.0,
-        quad_sigma=0.6,
-        refine_edges=1,
-        decode_sharpening=0.5,
+        nthreads=4,            # Increased thread count for faster processing
+        quad_decimate=1.0,     # No decimation for maximum accuracy
+        quad_sigma=0.4,        # Reduced blur for better edge detection
+        refine_edges=True,
+        decode_sharpening=0.8,  # Increased sharpening for better detection
         debug=False
     )
 
