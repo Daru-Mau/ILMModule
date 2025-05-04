@@ -401,6 +401,16 @@ public:
       case 'M': // Manual mode switch command
         toggleNavigationMode();
         break;
+      case 'T': // Test sensors command
+        runSensorDiagnostics();
+        break;
+      case 'S': // Stop command
+        emergencyStop = true;
+        transitionTo(IDLE);
+        break;
+      case 'R': // Resume command
+        emergencyStop = false;
+        break;
       }
     }
   }
@@ -744,6 +754,44 @@ public:
     return navMode;
   }
 };
+
+// === Sensor Testing Functions ===
+void testSensor(int trigPin, int echoPin, const char *sensorName)
+{
+  long distance = readDistance(trigPin, echoPin);
+  Serial.print(sensorName);
+  Serial.print(": ");
+  if (distance < 999.0)
+  {
+    Serial.print(distance);
+    Serial.print(" cm");
+    if (distance < CRITICAL_DISTANCE)
+    {
+      Serial.print(" [CRITICAL]");
+    }
+    else if (distance < SLOW_DOWN_DISTANCE)
+    {
+      Serial.print(" [WARNING]");
+    }
+  }
+  else
+  {
+    Serial.print("No reading");
+  }
+  Serial.println();
+}
+
+void runSensorDiagnostics()
+{
+  Serial.println("\n=== Running Sensor Diagnostics ===");
+  testSensor(TRIG_FL, ECHO_FL, "Front-Left");
+  testSensor(TRIG_F, ECHO_F, "Front");
+  testSensor(TRIG_FR, ECHO_FR, "Front-Right");
+  testSensor(TRIG_BL, ECHO_BL, "Back-Left");
+  testSensor(TRIG_B, ECHO_B, "Back");
+  testSensor(TRIG_BR, ECHO_BR, "Back-Right");
+  Serial.println("================================");
+}
 
 NavigationController navigator;
 

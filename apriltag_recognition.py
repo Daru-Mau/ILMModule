@@ -1,199 +1,112 @@
 """
-AprilTag Recognition System for Robot Navigation - Optimized Version
+AprilTag Recognition System
+This script handles the detection of AprilTags using a camera and processes the data
+for robot navigation.
 """
 
 import cv2
-import time
-import os
 import numpy as np
-from threading import Thread
-import queue
-from flask import Flask, Response
-import threading
-
-# Check if running on Raspberry Pi
-IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
-
-if IS_RASPBERRY_PI:
-    from picamera2 import Picamera2
-    from pupil_apriltags import Detector
-    from apriltag_communication import ArduinoCommunicator
-
-# === Optimized Configuration ===
-CAMERA_WIDTH = 640  # Reduced resolution for better performance
-CAMERA_HEIGHT = 480
-FOCAL_LENGTH_PX = 390  # Adjusted for new resolution
-DISTANCE_THRESHOLD = 5
-CENTER_TOLERANCE_RATIO = 0.2
-TAG_REAL_SIZE_CM = 15
-
-# === Performance Settings ===
-FRAME_QUEUE_SIZE = 1  # Reduced queue size
-USE_THREADING = True
-SKIP_FRAMES = 1  # Process every frame
-SEND_TO_ARDUINO = False
-
-# Global variables
-global_frame = None
-frame_lock = threading.Lock()
-arduino_comm = None
-frame_queue = queue.Queue(maxsize=FRAME_QUEUE_SIZE)
-
-# Initialize Flask app
-app = Flask(__name__)
+from pupil_apriltags import Detector
+from apriltag_communication import ArduinoCommunicator
+import math
+import time
 
 
-@app.route('/')
-def index():
-    return """
-    <html><head><title>Camera Feed</title></head>
-    <body style='margin:0;background:#000;'>
-        <img src='/video_feed' style='width:100%;max-width:960px;display:block;margin:0 auto;'>
-    </body></html>
-    """
+class AprilTagTracker:
+    def __init__(self, camera_id=0, tag_size=0.08):
+        """
+        Initialize the AprilTag tracking system
+        Args:
+            camera_id (int): Camera device ID
+            tag_size (float): Size of the AprilTag in meters
+        """
+        self.cap = cv2.VideoCapture(camera_id)
+        self.detector = Detector(families='tag36h11')
+        self.tag_size = tag_size
+        self.camera_params = None
+        self.communicator = ArduinoCommunicator()
+
+        # Try to load camera calibration
+        try:
+            calib_data = np.load('camera_calibration.npz')
+            self.camera_matrix = calib_data['camera_matrix']
+            self.dist_coeffs = calib_data['dist_coeffs']
+            self.camera_params = [self.camera_matrix[0, 0], self.camera_matrix[1, 1],
+                                  self.camera_matrix[0, 2], self.camera_matrix[1, 2]]
+        except:
+            print("Warning: No camera calibration found. Using default parameters.")
+            self.camera_matrix = np.array([[1000, 0, 320],
+                                           [0, 1000, 240],
+                                           [0, 0, 1]])
+            self.dist_coeffs = np.zeros((4, 1))
+            self.camera_params = [1000, 1000, 320, 240]
+
+    def process_frame(self):
+        """Process a single frame from the camera"""
+        ret, frame = self.cap.read()
+        if not ret:
+            return None
+
+        # Convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # Detect AprilTags
+        tags = self.detector.detect(gray, estimate_tag_pose=True,
+                                    camera_params=self.camera_params,
+                                    tag_size=self.tag_size)
+
+        if len(tags) > 0:
+            # Process the first detected tag
+            tag = tags[0]
+
+            # Extract position and orientation
+            x = tag.pose_t[0] * 1000  # Convert to mm
+            y = tag.pose_t[2] * 1000  # Z is forward in camera frame
+            yaw = math.atan2(tag.pose_R[1, 0], tag.pose_R[0, 0])
+
+            # Send data to Arduino
+            self.communicator.send_tag_data(tag.tag_id, x, y, yaw)
+
+            # Draw detection on frame
+            cv2.polylines(frame, [np.int32(tag.corners)], True, (0, 255, 0), 2)
+            cv2.putText(frame, f"ID: {tag.tag_id}", (int(tag.center[0]), int(tag.center[1])),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        else:
+            # No tag detected
+            self.communicator.clear_tag_data()
+
+        return frame
+
+    def run(self):
+        """Main processing loop"""
+        try:
+            while True:
+                frame = self.process_frame()
+                if frame is None:
+                    break
+
+                # Show frame
+                cv2.imshow('AprilTag Detection', frame)
+
+                # Check for Arduino responses
+                response = self.communicator.read_response()
+                if response:
+                    print(f"Arduino response: {response}")
+
+                # Exit on 'q' press
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.cap.release()
+        cv2.destroyAllWindows()
+        self.communicator.close()
 
 
-@app.route('/video_feed')
-def video_feed():
-    return Response(generate_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-def generate_frames():
-    while True:
-        with frame_lock:
-            if global_frame is not None:
-                ret, buffer = cv2.imencode('.jpg', global_frame, [
-                                           cv2.IMWRITE_JPEG_QUALITY, 70])
-                if not ret:
-                    continue
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        time.sleep(0.016)  # ~60fps max
-
-
-class StreamCapture:
-    def __init__(self, picam):
-        self.picam = picam
-        self.thread = Thread(target=self._capture_frames, daemon=True)
-        self.running = False
-
-    def start(self):
-        self.running = True
-        self.thread.start()
-
-    def _capture_frames(self):
-        while self.running:
-            if not frame_queue.full():
-                frame = self.picam.capture_array()
-                frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                frame_queue.put(frame)
-            time.sleep(0.016)  # Limit capture rate
-
-    def stop(self):
-        self.running = False
-        if self.thread.is_alive():
-            self.thread.join()
-
-
-def setup_camera():
-    """Initialize Pi Camera with optimized settings"""
-    picam2 = Picamera2()
-    config = picam2.create_preview_configuration(
-        main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-        controls={
-            "FrameDurationLimits": (33333, 33333),  # ~30fps
-            "AnalogueGain": 2.0,
-            "ExposureTime": 20000,
-            "AwbEnable": 0,
-            "Brightness": 0.5,
-        }
-    )
-    picam2.configure(config)
-    picam2.start()
-    time.sleep(0.1)
-    return picam2
-
-
-def get_direction(center_x, frame_width):
-    """Simplified direction detection"""
-    frame_center = frame_width // 2
-    center_tolerance = frame_width * CENTER_TOLERANCE_RATIO
-
-    if center_x < frame_center - center_tolerance:
-        return 'L'
-    elif center_x > frame_center + center_tolerance:
-        return 'R'
-    return 'F'
-
-
-def main_processing():
-    global global_frame, arduino_comm
-
-    if SEND_TO_ARDUINO and IS_RASPBERRY_PI:
-        arduino_comm = ArduinoCommunicator('/dev/ttyACM0', 9600)
-        arduino_comm.connect()
-
-    picam2 = setup_camera()
-
-    if IS_RASPBERRY_PI:
-        detector = Detector(
-            families="tag36h11",
-            nthreads=4,
-            quad_decimate=2.0,  # Increase decimation for better performance
-            quad_sigma=0.0,     # Disable blurring
-            refine_edges=True,
-            decode_sharpening=0.25,
-            debug=False
-        )
-
-    stream = StreamCapture(picam2)
-    stream.start()
-
-    try:
-        while True:
-            try:
-                frame = frame_queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-
-            if IS_RASPBERRY_PI:
-                # Convert to grayscale for faster processing
-                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                detections = detector.detect(gray)
-
-                if detections:
-                    main_tag = detections[0]  # Use first detected tag
-                    direction = get_direction(
-                        main_tag.center[0], frame.shape[1])
-
-                    # Simple visualization
-                    pts = main_tag.corners.astype(int)
-                    cv2.polylines(frame, [pts], True, (0, 255, 0), 2)
-
-                    if SEND_TO_ARDUINO and arduino_comm:
-                        arduino_comm.process_tag_data(
-                            main_tag.tag_id, 0, direction)
-
-            update_global_frame(frame)
-
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-    finally:
-        stream.stop()
-        picam2.stop()
-        if arduino_comm:
-            arduino_comm.close()
-
-
-def update_global_frame(frame):
-    global global_frame
-    with frame_lock:
-        global_frame = frame.copy()
-
-
-if __name__ == '__main__':
-    processing_thread = threading.Thread(target=main_processing)
-    processing_thread.daemon = True
-    processing_thread.start()
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+if __name__ == "__main__":
+    tracker = AprilTagTracker()
+    tracker.run()

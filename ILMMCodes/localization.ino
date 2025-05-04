@@ -47,14 +47,23 @@ unsigned long lastPositionUpdate = 0;
 
 // AprilTag data
 bool tagDetected = false;
-float tagX = 0.0;
-float tagY = 0.0;
-float tagYaw = 0.0;
+bool tagUpdated = false;
+unsigned long lastTagUpdate = 0;
+const unsigned long TAG_TIMEOUT = 1000; // ms before considering tag as lost
 
 // Kalman filter parameters
 float kalmanGain = 0.8;
 float positionVariance = 0.1;
 float measurementVariance = 0.2;
+
+// Extended position tracking
+struct Position
+{
+  float x;
+  float y;
+  float theta;
+  bool valid;
+} currentPos, targetPos;
 
 void setup()
 {
@@ -68,12 +77,23 @@ void setup()
   delay(1000); // Sensor stabilization
   calibrateSensors();
 
+  // Initialize position structs
+  currentPos = {0.0, 0.0, 0.0, true};
+  targetPos = {0.0, 0.0, 0.0, false};
+
   Serial.println("Localization System Ready!");
 }
 
 void loop()
 {
   unsigned long currentTime = millis();
+
+  // Check for tag timeout
+  if (tagDetected && (currentTime - lastTagUpdate > TAG_TIMEOUT))
+  {
+    tagDetected = false;
+    Serial.println("CLEAR"); // Notify movement controller that tag is lost
+  }
 
   if (currentTime - lastIMUUpdate >= IMU_UPDATE_INTERVAL)
   {
@@ -88,7 +108,7 @@ void loop()
     reportPosition();
   }
 
-  if (Serial.available() > 0)
+  while (Serial.available() > 0)
   {
     processSerialData();
   }
@@ -198,17 +218,31 @@ void updatePosition()
   // Update position based on heading (theta)
   x_pos += distanceCenter * cos(theta);
   y_pos += distanceCenter * sin(theta);
+
+  // Update current position struct
+  currentPos.x = x_pos;
+  currentPos.y = y_pos;
+  currentPos.theta = theta;
 }
 
 // --- Report Position ---
 void reportPosition()
 {
-  Serial.print("X(mm): ");
-  Serial.print(x_pos, 2);
-  Serial.print("  Y(mm): ");
-  Serial.print(y_pos, 2);
-  Serial.print("  Theta(rad): ");
-  Serial.println(theta, 4);
+  // Send current position to movement controller
+  Serial.print("POS:");
+  Serial.print(currentPos.x);
+  Serial.print(",");
+  Serial.print(currentPos.y);
+  Serial.print(",");
+  Serial.println(currentPos.theta);
+
+  // Debug output
+  Serial.print("Position - X(mm): ");
+  Serial.print(currentPos.x, 2);
+  Serial.print(" Y(mm): ");
+  Serial.print(currentPos.y, 2);
+  Serial.print(" Theta(rad): ");
+  Serial.println(currentPos.theta, 4);
 }
 
 // --- Serial Data (AprilTags) ---
@@ -231,18 +265,29 @@ void parseTagData(String data)
   if (firstComma > 0 && secondComma > firstComma && thirdComma > secondComma)
   {
     int id = data.substring(0, firstComma).toInt();
-    tagX = data.substring(firstComma + 1, secondComma).toFloat();
-    tagY = data.substring(secondComma + 1, thirdComma).toFloat();
-    tagYaw = data.substring(thirdComma + 1).toFloat();
-    tagDetected = true;
+    float x = data.substring(firstComma + 1, secondComma).toFloat();
+    float y = data.substring(secondComma + 1, thirdComma).toFloat();
+    float yaw = data.substring(thirdComma + 1).toFloat();
 
-    Serial.print("Tag Detected! ID: ");
+    // Update target position
+    targetPos.x = x;
+    targetPos.y = y;
+    targetPos.theta = yaw;
+    targetPos.valid = true;
+
+    // Update tag status
+    tagDetected = true;
+    tagUpdated = true;
+    lastTagUpdate = millis();
+
+    // Forward processed tag data to movement controller
+    Serial.print("TAG:");
     Serial.print(id);
-    Serial.print(" X: ");
-    Serial.print(tagX);
-    Serial.print(" Y: ");
-    Serial.print(tagY);
-    Serial.print(" Yaw: ");
-    Serial.println(tagYaw);
+    Serial.print(",");
+    Serial.print(x);
+    Serial.print(",");
+    Serial.print(y);
+    Serial.print(",");
+    Serial.println(yaw);
   }
 }
