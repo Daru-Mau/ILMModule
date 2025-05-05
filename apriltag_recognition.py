@@ -1,154 +1,233 @@
 """
-AprilTag Recognition System
-This script handles the detection of AprilTags using a camera and processes the data
-for robot navigation.
+AprilTag Recognition System for Robot Navigation - Optimized Version
 """
 
 import cv2
-import numpy as np
-from pupil_apriltags import Detector
-from apriltag_communication import ArduinoCommunicator
-import math
 import time
-from flask import Flask, Response, render_template
+import os
+import numpy as np
+from threading import Thread
+import queue
+from flask import Flask, Response
 import threading
 
+# Check if running on Raspberry Pi
+IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
+
+if IS_RASPBERRY_PI:
+    from picamera2 import Picamera2
+    from pupil_apriltags import Detector
+    from apriltag_communication import ArduinoCommunicator
+
+# === Optimized Configuration for Raspberry Pi 4 ===
+CAMERA_WIDTH = 800
+CAMERA_HEIGHT = 600
+FOCAL_LENGTH_PX = 487.5
+DISTANCE_THRESHOLD = 5
+CENTER_TOLERANCE_RATIO = 0.15
+TAG_REAL_SIZE_CM = 15
+
+# AprilTag families configuration
+TAG_FAMILIES = ["tag36h11", "tag25h9", "tag16h5"]  # Multiple supported families
+TAG_SIZE_BY_FAMILY = {
+    "tag36h11": 15.0,  # Size in cm
+    "tag25h9": 15.0,
+    "tag16h5": 15.0
+}
+
+# === Performance Settings ===
+FRAME_QUEUE_SIZE = 4  # Optimized for memory vs performance
+USE_THREADING = True
+SKIP_FRAMES = 0
+SEND_TO_ARDUINO = False
+MAX_FPS = 60
+FRAME_INTERVAL = 1.0 / MAX_FPS
+
+# Global variables
+global_frame = None
+frame_lock = threading.Lock()
+arduino_comm = None
+frame_queue = queue.Queue(maxsize=FRAME_QUEUE_SIZE)
+
+# Initialize Flask app
 app = Flask(__name__)
 
-class AprilTagTracker:
-    def __init__(self, camera_id=0, tag_size=0.08):
-        """
-        Initialize the AprilTag tracking system
-        Args:
-            camera_id (int): Camera device ID (default will be overridden by port detection)
-            tag_size (float): Size of the AprilTag in meters
-        """
-        # Try different camera ports commonly used on Raspberry Pi
-        camera_ports = [0, 2, -1]  # Common Raspberry Pi camera ports
-        self.cap = None
-        
-        for port in camera_ports:
-            print(f"Trying camera port: {port}")
-            cap = cv2.VideoCapture(port)
-            if cap.isOpened():
-                self.cap = cap
-                print(f"Successfully connected to camera on port: {port}")
-                break
-            cap.release()
-        
-        if self.cap is None:
-            raise RuntimeError("Could not open any camera port. Please check camera connection.")
-
-        self.detector = Detector(families='tag36h11')
-        self.tag_size = tag_size
-        self.camera_params = None
-        self.communicator = ArduinoCommunicator()
-
-        # Try to load camera calibration
-        try:
-            calib_data = np.load('camera_calibration.npz')
-            self.camera_matrix = calib_data['camera_matrix']
-            self.dist_coeffs = calib_data['dist_coeffs']
-            self.camera_params = [self.camera_matrix[0, 0], self.camera_matrix[1, 1],
-                                  self.camera_matrix[0, 2], self.camera_matrix[1, 2]]
-        except:
-            print("Warning: No camera calibration found. Using default parameters.")
-            self.camera_matrix = np.array([[1000, 0, 320],
-                                           [0, 1000, 240],
-                                           [0, 0, 1]])
-            self.dist_coeffs = np.zeros((4, 1))
-            self.camera_params = [1000, 1000, 320, 240]
-
-        self.frame_lock = threading.Lock()
-        self.current_frame = None
-
-    def process_frame(self):
-        """Process a single frame from the camera"""
-        ret, frame = self.cap.read()
-        if not ret:
-            return None
-
-        # Convert to grayscale
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        # Detect AprilTags
-        tags = self.detector.detect(gray, estimate_tag_pose=True,
-                                    camera_params=self.camera_params,
-                                    tag_size=self.tag_size)
-
-        if len(tags) > 0:
-            # Process the first detected tag
-            tag = tags[0]
-
-            # Extract position and orientation
-            x = tag.pose_t[0] * 1000  # Convert to mm
-            y = tag.pose_t[2] * 1000  # Z is forward in camera frame
-            yaw = math.atan2(tag.pose_R[1, 0], tag.pose_R[0, 0])
-
-            # Draw detection on frame
-            cv2.polylines(frame, [np.int32(tag.corners)], True, (0, 255, 0), 2)
-            cv2.putText(frame, f"ID: {tag.tag_id}", (int(tag.center[0]), int(tag.center[1])),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(frame, f"Dist: {y:.0f}mm", (int(tag.center[0]), int(tag.center[1]) + 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-        with self.frame_lock:
-            self.current_frame = frame
-        return frame
-
-    def get_current_frame(self):
-        with self.frame_lock:
-            return None if self.current_frame is None else self.current_frame.copy()
-
-    def run(self):
-        """Main processing loop"""
-        while True:
-            frame = self.process_frame()
-            if frame is None:
-                break
-            time.sleep(0.01)  # Small delay to prevent CPU overload
-
-    def cleanup(self):
-        """Clean up resources"""
-        self.cap.release()
-        cv2.destroyAllWindows()
-
-def generate_frames(tracker):
-    while True:
-        frame = tracker.get_current_frame()
-        if frame is not None:
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if ret:
-                frame_bytes = buffer.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.01)
 
 @app.route('/')
 def index():
     return """
-    <html>
-    <head>
-        <title>AprilTag Detection Stream</title>
-    </head>
-    <body>
-        <h1>AprilTag Detection Stream</h1>
-        <img src="/video_feed" width="640" height="480" />
-    </body>
-    </html>
+    <html><head><title>Camera Feed</title></head>
+    <body style='margin:0;background:#000;'>
+        <img src='/video_feed' style='width:100%;max-width:960px;display:block;margin:0 auto;'>
+    </body></html>
     """
+
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(tracker),
+    return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
-if __name__ == "__main__":
-    tracker = AprilTagTracker()
-    # Start the tracking in a separate thread
-    tracking_thread = threading.Thread(target=tracker.run)
-    tracking_thread.daemon = True
-    tracking_thread.start()
-    
-    # Run the Flask server
-    app.run(host='0.0.0.0', port=5000)
+
+def generate_frames():
+    while True:
+        with frame_lock:
+            if global_frame is not None:
+                ret, buffer = cv2.imencode('.jpg', global_frame, [
+                                           cv2.IMWRITE_JPEG_QUALITY, 70])
+                if not ret:
+                    continue
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        time.sleep(0.016)  # ~60fps max
+
+
+class StreamCapture:
+    def __init__(self, picam):
+        self.picam = picam
+        self.thread = Thread(target=self._capture_frames, daemon=True)
+        self.running = False
+
+    def start(self):
+        self.running = True
+        self.thread.start()
+
+    def _capture_frames(self):
+        while self.running:
+            if not frame_queue.full():
+                frame = self.picam.capture_array()
+                frame_queue.put(frame)
+            time.sleep(0.016)  # Limit capture rate
+
+    def stop(self):
+        self.running = False
+        if self.thread.is_alive():
+            self.thread.join()
+
+
+def setup_camera():
+    """Initialize Pi Camera with optimized settings"""
+    picam2 = Picamera2()
+    config = picam2.create_preview_configuration(
+        main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
+        controls={
+            "FrameDurationLimits": (33333, 33333),  # ~30fps
+            "AnalogueGain": 2.0,
+            "ExposureTime": 20000,
+            "AwbEnable": 0,
+            "Brightness": 0.5,
+        }
+    )
+    picam2.configure(config)
+    picam2.start()
+    time.sleep(0.1)
+    return picam2
+
+
+def get_direction(center_x, frame_width):
+    """Simplified direction detection"""
+    frame_center = frame_width // 2
+    center_tolerance = frame_width * CENTER_TOLERANCE_RATIO
+
+    if center_x < frame_center - center_tolerance:
+        return 'L'
+    elif center_x > frame_center + center_tolerance:
+        return 'R'
+    return 'F'
+
+def estimate_tag_size(corners):
+    """Estimate tag size in pixels based on corner distances."""
+    side_lengths = [np.linalg.norm(corners[i] - corners[(i + 1) % 4]) for i in range(4)]
+    return sum(side_lengths) / 4.0
+
+
+
+def main_processing():
+    global global_frame, arduino_comm
+
+    if SEND_TO_ARDUINO and IS_RASPBERRY_PI:
+        arduino_comm = ArduinoCommunicator('/dev/ttyACM0', 9600)
+        arduino_comm.connect()
+
+    picam2 = setup_camera()
+
+    if IS_RASPBERRY_PI:
+        detector = Detector(
+            families="tag36h11",
+            nthreads=4,
+            quad_decimate=2.0,  # Increase decimation for better performance
+            refine_edges=True,
+            decode_sharpening=0.25,
+            debug=False
+        )
+
+    stream = StreamCapture(picam2)
+    stream.start()
+
+    try:
+        last_direction = None  # Place before the while loop
+
+        while True:
+            try:
+                frame = frame_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+
+            if IS_RASPBERRY_PI:
+                # Convert to grayscale for faster processing
+                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+
+                # 🛠️ Detect AprilTags
+                detections = detector.detect(gray)
+
+                if detections:
+                    # Select tag closest to center
+                    main_tag = min(detections, key=lambda d: abs(d.center[0] - frame.shape[1] / 2))
+                    tag_size_px = np.linalg.norm(main_tag.corners[0] - main_tag.corners[2])  # Estimate size in px
+
+                    frame_center = frame.shape[1] // 2
+                    center_tolerance = frame.shape[1] * CENTER_TOLERANCE_RATIO
+
+                    if main_tag.center[0] < frame_center - center_tolerance:
+                        direction = 'LEFT'
+                    elif main_tag.center[0] > frame_center + center_tolerance:
+                        direction = 'RIGHT'
+                    else:
+                        direction = 'FORWARD'
+
+                    distance_cm = (FOCAL_LENGTH_PX * TAG_REAL_SIZE_CM) / tag_size_px
+
+                    # Draw tag and overlay direction + distance
+                    pts = main_tag.corners.astype(int)
+                    cv2.polylines(frame, [pts], True, (0, 255, 0), 2)
+                    cv2.putText(frame, f"Dir: {direction}, Dist: {distance_cm:.1f}cm", 
+                                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+                    if direction != last_direction:
+                        print(f"[ACTION] Move {direction} (Estimated distance: {distance_cm:.1f} cm)")
+                        last_direction = direction
+
+                    if SEND_TO_ARDUINO and arduino_comm:
+                        arduino_comm.process_tag_data(main_tag.tag_id, 0, direction)
+
+            update_global_frame(frame)
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        stream.stop()
+        picam2.stop()
+        if arduino_comm:
+            arduino_comm.close()
+
+
+def update_global_frame(frame):
+    global global_frame
+    with frame_lock:
+        global_frame = frame.copy()
+
+
+if __name__ == '__main__':
+    processing_thread = threading.Thread(target=main_processing)
+    processing_thread.daemon = True
+    processing_thread.start()
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
