@@ -24,8 +24,16 @@ if IS_RASPBERRY_PI:
 # Camera settings
 CAMERA_WIDTH = 1640       # Higher resolution for better long-distance detection
 CAMERA_HEIGHT = 1232      # Native 4:3 resolution for v2 camera
-FOCAL_LENGTH_PX = 920     # Increased focal length estimate for better distance calculation
-TAG_SIZE_CM = 15          # Physical tag size in cm
+FOCAL_LENGTH_PX = 1000    # Camera focal length in pixels
+TAG_SIZE_MM = 150         # Physical tag size in mm
+TAG_SIZE_CM = TAG_SIZE_MM / 10  # Convert to cm for existing code compatibility
+
+# Camera intrinsic parameters (for improved distance calculation)
+# These parameters should be calibrated for your specific camera
+CAM_FX = 1000.0  # Focal length in x direction (pixels)
+CAM_FY = 1000.0  # Focal length in y direction (pixels)
+CAM_CX = CAMERA_WIDTH / 2  # Principal point x-coordinate
+CAM_CY = CAMERA_HEIGHT / 2  # Principal point y-coordinate
 
 # Arduino communication
 ARDUINO_ENABLED = False    # Enable Arduino communication
@@ -58,20 +66,31 @@ def setup_camera():
             controls={
                 "FrameRate": 15,          # Lower framerate for more stable images
                 "AwbEnable": True,        # Auto white balance
-                "AeEnable": True,         # Auto exposure
                 "ExposureTime": 8000,     # 8ms exposure for clearer edges
                 "AnalogueGain": 4.0,      # Increased gain for better visibility at distance
                 "Sharpness": 15.0,        # Maximum sharpness for clearest tag edges
                 "Contrast": 2.0,          # Higher contrast for better black/white distinction
                 "Brightness": 0.0,        # Neutral brightness to prevent washout
                 "NoiseReductionMode": 0,  # Disable noise reduction to preserve edges
-                "AwbMode": 1             # Auto white balance mode (1 = normal)
+                "AwbMode": 1              # Auto white balance mode (1 = normal)
+                # Removed unsupported parameters
             }
         )
         
+        # Use IPA (Image Processing Algorithms) file for advanced tuning
+        # This loads the IMX219.json tuning parameters automatically
+        picam.set_controls({"NoiseReductionMode": 0})  # Explicitly disable noise reduction for tag edges
+        
         picam.configure(config)
         picam.start()
+        
+        # Allow the camera to adjust to the scene
         time.sleep(0.5)  # Short delay for camera initialization
+        
+        # Fine-tune the exposure parameters - removed unsupported parameters
+        picam.set_controls({
+            "FrameDurationLimits": (33333, 66666)  # Set min/max frame duration based on imx219.json
+        })
         
         return picam
         
@@ -103,35 +122,68 @@ def setup_serial():
         return None
 
 def estimate_tag_size(corners):
-    """Calculate tag size in pixels based on corner positions with improved accuracy"""
-    # Calculate the perimeter of the tag using all four sides
-    side_lengths = [np.linalg.norm(corners[i] - corners[(i+1) % 4]) for i in range(4)]
+    """Calculate tag size in pixels based on corner positions with robust metrics.
     
-    # Filter out any outlier measurements (helps with partially occluded tags)
-    filtered_lengths = sorted(side_lengths)
-    if len(filtered_lengths) >= 3:
-        # Use the middle values if we have enough measurements
-        filtered_lengths = filtered_lengths[1:-1]
+    Args:
+        corners: List of four corner points of the AprilTag
+        
+    Returns:
+        Average side length of the tag in pixels
+    """
+    # Calculate all side lengths
+    side_lengths = []
+    for i in range(4):
+        # Calculate Euclidean distance between consecutive corners
+        side = np.linalg.norm(corners[i] - corners[(i+1) % 4])
+        side_lengths.append(side)
     
-    avg_side_length = np.mean(filtered_lengths)
-    return avg_side_length
+    # Calculate diagonal lengths for additional robustness
+    diagonal1 = np.linalg.norm(corners[0] - corners[2])
+    diagonal2 = np.linalg.norm(corners[1] - corners[3])
+    
+    # Verify if the shape is roughly square (for quality control)
+    sides_std = np.std(side_lengths)
+    sides_mean = np.mean(side_lengths)
+    diag_ratio = max(diagonal1, diagonal2) / min(diagonal1, diagonal2)
+    
+    # If the tag shape is highly distorted, apply corrections
+    if sides_std / sides_mean > 0.2 or diag_ratio > 1.3:
+        # For distorted tags, prefer the median of sides and use diagonals for verification
+        # Sqrt of 2 is diagonal to side ratio in a perfect square
+        estimated_side = np.median(side_lengths)
+        estimated_side_from_diag = (diagonal1 + diagonal2) / (2 * np.sqrt(2))
+        
+        # Weighted average giving more importance to sides for slightly distorted tags
+        return 0.7 * estimated_side + 0.3 * estimated_side_from_diag
+    else:
+        # For clean detections, just use the average side length
+        return sides_mean
 
 def calculate_distance(tag_size_px):
-    """Calculate distance to tag using pinhole camera model with multi-point calibration"""
-    # Improved distance calculation with non-linear correction
-    raw_distance = (FOCAL_LENGTH_PX * TAG_SIZE_CM) / tag_size_px
+    """Calculate distance to AprilTag using a more accurate camera model.
     
-    # Apply non-linear correction for more accurate distance at varying ranges
-    # These coefficients should be calibrated for your specific camera setup
-    if raw_distance < 100:
-        # Close range correction (slight adjustment)
-        return raw_distance * 0.95
-    elif raw_distance < 300:
-        # Mid range correction
-        return raw_distance * 0.98
+    This function uses the known physical size of the tag (150mm) and the
+    detected size in pixels to calculate distance using the pinhole camera model.
+    
+    Args:
+        tag_size_px: Estimated tag size in pixels
+        
+    Returns:
+        Distance to tag in centimeters
+    """
+    # Distance calculation using the pinhole camera model:
+    # distance = (focal_length * real_size) / pixel_size
+    distance_mm = (CAM_FX * TAG_SIZE_MM) / tag_size_px
+    distance_cm = distance_mm / 10.0  # Convert mm to cm
+    
+    # Apply a small correction for lens distortion effects
+    # These values should be calibrated based on actual measurements
+    if distance_cm < 50:
+        return distance_cm * 1.05  # Closer objects tend to appear slightly further than they are
+    elif distance_cm < 150:
+        return distance_cm * 1.02  # Mid-range slight correction
     else:
-        # Far range correction (compensate for underestimation at distance)
-        return raw_distance * 1.08
+        return distance_cm * 0.98  # Far objects tend to appear slightly closer than they are
 
 def get_direction(detection, frame_width):
     """Determine movement direction based on tag position and size"""

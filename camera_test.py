@@ -41,9 +41,21 @@ class CameraStream:
             # Create a new camera instance
             self.picam2 = Picamera2()
             
-            # Use the simplest configuration with lower resolution
+            # Use enhanced configuration with IMX219 tuning parameters
+            # Removing unsupported parameters
             video_config = self.picam2.create_still_configuration(
-                main={"size": (640, 480)}
+                main={"size": (1640, 1232)},  # Higher resolution for better quality
+                controls={
+                    "FrameRate": 15,          # Lower framerate for clearer images
+                    "AwbEnable": True,        # Auto white balance
+                    "ExposureTime": 8000,     # 8ms exposure for clearer edges
+                    "AnalogueGain": 4.0,      # Increased gain for better visibility
+                    "Sharpness": 15.0,        # Maximum sharpness for clearest details
+                    "Contrast": 2.0,          # Higher contrast for better distinction
+                    "Brightness": 0.0,        # Neutral brightness to prevent washout
+                    "NoiseReductionMode": 0,  # Disable noise reduction to preserve details
+                    "AwbMode": 1              # Auto white balance mode (1 = normal)
+                }
             )
             
             self.picam2.configure(video_config)
@@ -52,13 +64,18 @@ class CameraStream:
             # Allow warm-up time
             time.sleep(1)
             
+            # Set frame duration limits only (removed unsupported parameters)
+            self.picam2.set_controls({
+                "FrameDurationLimits": (33333, 66666)  # Set min/max frame duration based on imx219.json
+            })
+            
             # Test capture to validate camera is working
             test_frame = self.picam2.capture_array()
             if test_frame is None or len(test_frame.shape) < 2:
                 raise Exception("Invalid frame captured during initialization")
                 
             self.initialized = True
-            logger.info("Camera initialized successfully")
+            logger.info("Camera initialized successfully with IMX219 tuning parameters")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize camera: {str(e)}")
