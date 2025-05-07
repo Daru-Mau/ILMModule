@@ -1,173 +1,141 @@
 """
-AprilTag Communication System - Optimized Version
-This script handles the communication between the AprilTag recognition system and the Arduino robot.
-It receives tag detection data and sends appropriate movement commands to the robot.
+Simple AprilTag Communication Module
+Handles serial communication with Arduino for robot movement control
 """
 
 import serial
 import time
-import math
-from typing import Optional, Tuple, Dict
-from threading import Lock, Event
 import logging
-import queue
 from dataclasses import dataclass
-from contextlib import contextmanager
+from typing import Optional, Tuple
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# === Serial Communication Settings ===
+# Serial communication settings
 DEFAULT_PORT = '/dev/ttyACM0'
-DEFAULT_BAUD_RATE = 115200  # Increased for better performance
-SERIAL_TIMEOUT = 0.1  # Reduced for faster timeout handling
-ARDUINO_RESET_DELAY = 1.0  # Reduced startup delay
-COMMAND_QUEUE_SIZE = 50
-RETRY_LIMIT = 3
+DEFAULT_BAUD_RATE = 115200
+RETRY_COUNT = 3
 RETRY_DELAY = 0.1
 
 @dataclass
 class TagData:
+    """Simple container for AprilTag detection data"""
     tag_id: int
-    x: float
-    y: float
-    yaw: float
-    timestamp: float
+    distance: float
+    direction: str
+    timestamp: float = None
+    
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = time.time()
+
 
 class ArduinoCommunicator:
+    """Handles serial communication with Arduino"""
+    
     def __init__(self, port: str = DEFAULT_PORT, baud_rate: int = DEFAULT_BAUD_RATE):
-        """Initialize the Arduino communication interface with improved error handling"""
+        """Initialize the communicator with given port and baud rate"""
         self.port = port
         self.baud_rate = baud_rate
-        self.arduino: Optional[serial.Serial] = None
+        self.serial = None
         self.connected = False
-        self.last_position = (0.0, 0.0, 0.0)
-        self.command_queue = queue.Queue(maxsize=COMMAND_QUEUE_SIZE)
-        self.lock = Lock()
-        self.shutdown_event = Event()
-        self.last_tag_data: Optional[TagData] = None
-        self.retry_count: Dict[str, int] = {}
-        self.try_connect()
-
-    @contextmanager
-    def serial_lock(self):
-        """Thread-safe context manager for serial operations"""
+        self.last_tag = None
+        self.last_position = None
+    
+    def connect(self) -> bool:
+        """Establish connection to Arduino"""
         try:
-            self.lock.acquire()
-            yield
-        finally:
-            self.lock.release()
-
-    def try_connect(self) -> bool:
-        """Attempt to establish connection with Arduino with retry mechanism"""
-        with self.serial_lock():
-            try:
-                if self.arduino:
-                    self.arduino.close()
-                
-                self.arduino = serial.Serial(
-                    self.port,
-                    self.baud_rate,
-                    timeout=SERIAL_TIMEOUT,
-                    write_timeout=SERIAL_TIMEOUT
-                )
-                time.sleep(ARDUINO_RESET_DELAY)
-                self.connected = True
-                self.retry_count.clear()
-                logger.info(f"Connected to Arduino on {self.port}")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to connect to Arduino: {e}")
-                self.connected = False
-                return False
-
-    def _send_with_retry(self, command: str, command_type: str) -> bool:
-        """Send command with retry mechanism"""
-        if not self.connected:
-            return False
-
-        self.retry_count.setdefault(command_type, 0)
-        
-        with self.serial_lock():
-            try:
-                self.arduino.write(command.encode())
-                self.arduino.flush()
-                self.retry_count[command_type] = 0
-                return True
-            except Exception as e:
-                logger.warning(f"Failed to send {command_type}: {e}")
-                self.retry_count[command_type] += 1
-                
-                if self.retry_count[command_type] >= RETRY_LIMIT:
-                    logger.error(f"Max retries reached for {command_type}")
-                    self.connected = False
-                    return False
-                
-                time.sleep(RETRY_DELAY)
-                return self._send_with_retry(command, command_type)
-
-    def process_tag_data(self, tag_id: int, distance: float, direction: str) -> bool:
-        """Process and send tag data with optimized format"""
-        if not self.connected:
-            return False
-
-        command = f"TAG:{tag_id},{distance:.1f},{direction}\n"
-        return self._send_with_retry(command, "tag_data")
-
-    def update_position(self, x: float, y: float, yaw: float) -> bool:
-        """Send current position data with optimized precision"""
-        if not self.connected:
-            return False
-
-        command = f"POS:{x:.1f},{y:.1f},{yaw:.2f}\n"
-        if self._send_with_retry(command, "position"):
-            self.last_position = (x, y, yaw)
+            self.serial = serial.Serial(self.port, self.baud_rate, timeout=1)
+            time.sleep(1)  # Allow Arduino to reset
+            self.connected = True
+            logger.info(f"Connected to Arduino on {self.port}")
             return True
-        return False
-
-    def clear_tag_data(self) -> bool:
-        """Send command to clear tag data"""
-        return self._send_with_retry("CLEAR\n", "clear")
-
-    def send_command(self, command: str) -> bool:
-        """Send a direct command with validation"""
-        if not command in ['M', 'T', 'S', 'R']:
-            logger.warning(f"Invalid command: {command}")
+        except Exception as e:
+            logger.error(f"Failed to connect to Arduino: {e}")
+            self.connected = False
             return False
-        return self._send_with_retry(f"{command}\n", "command")
-
-    def read_response(self) -> Optional[str]:
-        """Read response with timeout and error handling"""
-        if not self.connected:
-            return None
-
-        with self.serial_lock():
+    
+    def disconnect(self) -> None:
+        """Close the serial connection"""
+        if self.serial and self.serial.is_open:
+            self.serial.close()
+            logger.info("Disconnected from Arduino")
+        self.connected = False
+    
+    def _send_command(self, command: str) -> bool:
+        """Send a command to Arduino with retry logic"""
+        if not self.connected or not self.serial:
+            logger.warning("Cannot send command: not connected")
+            return False
+        
+        for attempt in range(RETRY_COUNT):
             try:
-                if self.arduino.in_waiting:
-                    response = self.arduino.readline().decode().strip()
-                    if response:
-                        logger.debug(f"Arduino: {response}")
-                        return response
-                return None
+                self.serial.write(command.encode())
+                self.serial.flush()
+                return True
             except Exception as e:
-                logger.error(f"Failed to read from Arduino: {e}")
-                self.connected = False
-                return None
+                logger.warning(f"Send failed (attempt {attempt+1}/{RETRY_COUNT}): {e}")
+                time.sleep(RETRY_DELAY)
+        
+        logger.error("Failed to send command after retries")
+        self.connected = False
+        return False
+    
+    def send_tag_data(self, tag_data: TagData) -> bool:
+        """Send tag detection data to Arduino"""
+        if not self.connected:
+            return False
+        
+        # Format: TAG:id,distance,direction
+        command = f"TAG:{tag_data.tag_id},{tag_data.distance:.1f},{tag_data.direction}\n"
+        success = self._send_command(command)
+        
+        if success:
+            self.last_tag = tag_data
+            
+        return success
+    
+    def send_position(self, x: float, y: float, theta: float) -> bool:
+        """Send position data to Arduino"""
+        if not self.connected:
+            return False
+        
+        # Format: POS:x,y,theta
+        command = f"POS:{x:.1f},{y:.1f},{theta:.3f}\n"
+        success = self._send_command(command)
+        
+        if success:
+            self.last_position = (x, y, theta)
+            
+        return success
+    
+    def send_stop(self) -> bool:
+        """Send stop command to Arduino"""
+        return self._send_command("STOP\n")
+    
+    def send_clear(self) -> bool:
+        """Send clear tag data command to Arduino"""
+        return self._send_command("CLEAR\n")
 
-    def close(self):
-        """Safely close the serial connection"""
-        with self.serial_lock():
-            if self.arduino:
-                try:
-                    self.arduino.close()
-                except Exception as e:
-                    logger.error(f"Error closing connection: {e}")
-                finally:
-                    self.connected = False
-                    self.shutdown_event.set()
 
-    def get_last_position(self) -> Tuple[float, float, float]:
-        """Get the last known position (thread-safe)"""
-        with self.serial_lock():
-            return self.last_position
+def main():
+    """Demo usage of the ArduinoCommunicator class"""
+    communicator = ArduinoCommunicator()
+    if communicator.connect():
+        # Send test commands
+        tag = TagData(tag_id=1, distance=50.0, direction='F')
+        communicator.send_tag_data(tag)
+        time.sleep(1)
+        communicator.send_position(100, 200, 1.5)
+        time.sleep(1)
+        communicator.send_stop()
+        communicator.disconnect()
+    else:
+        logger.error("Demo failed: Could not connect to Arduino")
+
+
+if __name__ == "__main__":
+    main()

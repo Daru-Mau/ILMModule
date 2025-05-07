@@ -1,18 +1,16 @@
 """
-AprilTag Recognition System for Robot Navigation
-Optimized for Raspberry Pi 4 with web-based visualization
+Optimized AprilTag Recognition System for Robot Navigation
+Focused on accurate tag detection without video streaming features
 """
 
 import cv2
 import time
 import os
 import numpy as np
-from threading import Thread, Lock, Event
-import queue
 import serial
 import signal
 import sys
-from flask import Flask, Response, render_template_string
+from threading import Event
 
 # Check if running on Raspberry Pi
 IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
@@ -20,261 +18,171 @@ IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
 if IS_RASPBERRY_PI:
     from picamera2 import Picamera2
     from pupil_apriltags import Detector
+    from apriltag_communication import ArduinoCommunicator, TagData
 
-# === Camera Configuration ===
-CAMERA_WIDTH = 1280  # Higher resolution for better detection at distance
-CAMERA_HEIGHT = 720
-FOCAL_LENGTH_PX = 1600  # Adjusted focal length for new resolution
-TAG_REAL_SIZE_CM = 15
-DISTANCE_THRESHOLD = 45
-CENTER_TOLERANCE_RATIO = 0.15
+# === Configuration ===
+# Camera settings
+CAMERA_WIDTH = 1640       # Higher resolution for better long-distance detection
+CAMERA_HEIGHT = 1232      # Native 4:3 resolution for v2 camera
+FOCAL_LENGTH_PX = 920     # Increased focal length estimate for better distance calculation
+TAG_SIZE_CM = 15          # Physical tag size in cm
 
-# === Arduino Communication ===
-SEND_TO_ARDUINO = False
+# Arduino communication
+ARDUINO_ENABLED = False   # Set to False when Arduino is not connected
 SERIAL_PORT = '/dev/ttyACM0'
-BAUD_RATE = 9600
+BAUD_RATE = 115200
 
-# === Performance Settings ===
-FRAME_QUEUE_SIZE = 5  # Increased queue size for smoother processing
-SKIP_FRAMES = 1  # Process every frame on Pi 4
-USE_THREADING = True
-SHOW_FEED = True
-VERBOSE = True
+# Detection settings
+VERBOSE = True            # Set to False to reduce console output
+DETECTION_INTERVAL = 0.1  # 10 FPS for more reliable processing
 
-# === Global Variables ===
-frame_queue = queue.Queue(maxsize=FRAME_QUEUE_SIZE)
-frame_lock = Lock()
-last_direction = None
-global_frame = None
-shutdown_event = Event()  # For coordinating clean shutdown
+# Navigation parameters
+CENTER_TOLERANCE = 0.15   # Percentage of frame width for center tolerance
+DISTANCE_THRESHOLD = 30   # Distance (cm) threshold for movement decisions
 
-# Initialize Flask app with minimal logging
-app = Flask(__name__)
-app.logger.setLevel(40)  # Set to ERROR level (40)
+# === Global state ===
+shutdown_event = Event()
 
-# HTML template for the web interface
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>AprilTag Detection</title>
-    <style>
-        body {
-            margin: 0;
-            background: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        img {
-            max-width: 100%;
-            height: auto;
-        }
-    </style>
-</head>
-<body>
-    <img src="{{ url_for('video_feed') }}">
-</body>
-</html>
-"""
-
-@app.route('/')
-def index():
-    """Serve the main page"""
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/video_feed')
-def video_feed():
-    """Video streaming route"""
-    return Response(generate_frames(),
-                   mimetype='multipart/x-mixed-replace; boundary=frame')
-
-def generate_frames():
-    """Generate frames for the web stream"""
-    while not shutdown_event.is_set():
-        with frame_lock:
-            if global_frame is not None:
-                try:
-                    ret, buffer = cv2.imencode('.jpg', global_frame)
-                    if ret:
-                        frame_data = buffer.tobytes()
-                        yield (b'--frame\r\n'
-                               b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
-                except Exception as e:
-                    print(f"Error generating frame: {e}")
-        time.sleep(0.1)  # Reduce frame rate to avoid overwhelming the Pi
+def setup_camera():
+    """Initialize the Raspberry Pi camera with optimal settings for AprilTag detection"""
+    if not IS_RASPBERRY_PI:
+        return None
+    
+    try:
+        # Initialize camera
+        picam = Picamera2()
+        
+        # Configure camera with settings optimized for tag detection
+        config = picam.create_preview_configuration(
+            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "BGR888"},
+            controls={
+                "FrameRate": 15,          # Lower framerate for more stable images
+                "AwbEnable": True,        # Auto white balance
+                "AeEnable": True,         # Auto exposure
+                "ExposureTime": 8000,     # 8ms exposure for clearer edges
+                "AnalogueGain": 4.0,      # Increased gain for better visibility at distance
+                "Sharpness": 15.0,        # Maximum sharpness for clearest tag edges
+                "Contrast": 2.0,          # Higher contrast for better black/white distinction
+                "Brightness": 0.0,        # Neutral brightness to prevent washout
+                "NoiseReductionMode": 0,  # Disable noise reduction to preserve edges
+                "AwbMode": 1             # Auto white balance mode (1 = normal)
+            }
+        )
+        
+        picam.configure(config)
+        picam.start()
+        time.sleep(0.5)  # Short delay for camera initialization
+        
+        return picam
+        
+    except Exception as e:
+        print(f"Camera setup failed: {e}")
+        # Try to clean up any camera resources
+        try:
+            import subprocess
+            subprocess.run(['sudo', 'pkill', '-f', 'libcamera'], stderr=subprocess.DEVNULL)
+        except:
+            pass
+        return None
 
 def setup_serial():
     """Initialize serial connection to Arduino"""
-    if not SEND_TO_ARDUINO:
+    if not ARDUINO_ENABLED:
         return None
+    
     try:
-        arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2)  # Wait for Arduino reset
-        print("Arduino connected successfully")
-        return arduino
+        communicator = ArduinoCommunicator(SERIAL_PORT, BAUD_RATE)
+        if communicator.connect():
+            print("Arduino connected successfully")
+            return communicator
+        else:
+            print("Failed to connect to Arduino")
+            return None
     except Exception as e:
         print(f"Failed to connect to Arduino: {e}")
         return None
 
 def estimate_tag_size(corners):
-    """Calculate tag size based on corner positions"""
-    side_lengths = [np.linalg.norm(corners[i] - corners[(i + 1) % 4]) for i in range(4)]
-    return np.mean(side_lengths)
+    """Calculate tag size in pixels based on corner positions with improved accuracy"""
+    # Calculate the perimeter of the tag using all four sides
+    side_lengths = [np.linalg.norm(corners[i] - corners[(i+1) % 4]) for i in range(4)]
+    
+    # Filter out any outlier measurements (helps with partially occluded tags)
+    filtered_lengths = sorted(side_lengths)
+    if len(filtered_lengths) >= 3:
+        # Use the middle values if we have enough measurements
+        filtered_lengths = filtered_lengths[1:-1]
+    
+    avg_side_length = np.mean(filtered_lengths)
+    return avg_side_length
 
-def get_direction(detection, frame_width, distance_threshold):
-    """Determine movement direction based on tag position and distance"""
+def calculate_distance(tag_size_px):
+    """Calculate distance to tag using pinhole camera model with multi-point calibration"""
+    # Improved distance calculation with non-linear correction
+    raw_distance = (FOCAL_LENGTH_PX * TAG_SIZE_CM) / tag_size_px
+    
+    # Apply non-linear correction for more accurate distance at varying ranges
+    # These coefficients should be calibrated for your specific camera setup
+    if raw_distance < 100:
+        # Close range correction (slight adjustment)
+        return raw_distance * 0.95
+    elif raw_distance < 300:
+        # Mid range correction
+        return raw_distance * 0.98
+    else:
+        # Far range correction (compensate for underestimation at distance)
+        return raw_distance * 1.08
+
+def get_direction(detection, frame_width):
+    """Determine movement direction based on tag position and size"""
     center_x = detection.center[0]
-    tag_size = estimate_tag_size(detection.corners)
-    frame_center = frame_width // 2
-    center_tolerance = frame_width * CENTER_TOLERANCE_RATIO
-
-    # Check distance first
-    if tag_size >= distance_threshold:
-        return 'S', tag_size
-
-    # Check horizontal position
-    if center_x < frame_center - center_tolerance:
-        return 'L', tag_size
-    elif center_x > frame_center + center_tolerance:
-        return 'R', tag_size
-    return 'F', tag_size
-
-class StreamCapture:
-    def __init__(self, picam):
-        self.picam = picam
-        self.thread = Thread(target=self._capture_frames, daemon=True)
-        self.running = False
-
-    def start(self):
-        self.running = True
-        self.thread.start()
-
-    def _capture_frames(self):
-        while self.running and not shutdown_event.is_set():
-            if not frame_queue.full():
-                try:
-                    frame = self.picam.capture_array()
-                    # Apply rotation if needed
-                    # Uncomment if camera is mounted in a different orientation
-                    # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                    frame_queue.put(frame)
-                except Exception as e:
-                    print(f"Camera capture error: {e}")
-                    time.sleep(0.1)  # Sleep on error to avoid rapid error loops
-            time.sleep(0.001)
-
-    def stop(self):
-        self.running = False
-        if self.thread.is_alive():
-            try:
-                self.thread.join(timeout=1.0)  # Wait with timeout
-            except Exception:
-                pass  # Ignore join errors on shutdown
-
-def cleanup_camera_resources():
-    """Attempt to clean up any lingering camera processes"""
-    try:
-        import subprocess
-        # Try to kill any processes that might be using the camera
-        subprocess.run(['sudo', 'pkill', '-f', 'libcamera'], stderr=subprocess.DEVNULL)
-        time.sleep(1)  # Allow time for processes to terminate
-        return True
-    except Exception as e:
-        print(f"Warning: Failed to clean up camera resources: {e}")
-        return False
-
-def setup_camera():
-    """Initialize Pi Camera with optimized settings for Pi 4"""
-    try:
-        picam2 = Picamera2()
-        
-        # Advanced camera configuration with settings optimized for AprilTag detection
-        config = picam2.create_preview_configuration(
-            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-            controls={
-                "FrameDurationLimits": (33333, 33333),  # Force 30fps
-                "AwbEnable": True,  # Auto white balance for consistent colors
-                "AeEnable": True,   # Auto exposure for adapting to lighting changes
-                "AnalogueGain": 1.0, # Base gain level
-                "ExposureTime": 16000,  # Faster exposure to reduce motion blur
-                "Sharpness": 10.0,      # Increase sharpness for better tag edges
-                "Contrast": 1.2,        # Slightly higher contrast for tag detection
-                "NoiseReductionMode": 2 # Balanced noise reduction
-            },
-            buffer_count=4
-        )
-        
-        picam2.configure(config)
-        picam2.start()
-        
-        # Allow camera to settle with optimal parameters
-        time.sleep(0.5)
-        
-        return picam2
-    except RuntimeError as e:
-        if "Failed to acquire camera: Device or resource busy" in str(e) or "Camera __init__ sequence did not complete" in str(e):
-            print("Camera is busy. Attempting to free resources...")
-            if cleanup_camera_resources():
-                print("Please restart the program now.")
-            else:
-                print("Failed to clean up resources. Please try rebooting the system.")
-        else:
-            print(f"Camera setup error: {e}")
-        return None
-    except Exception as e:
-        print(f"Unexpected camera error: {e}")
-        return None
+    tag_size_px = estimate_tag_size(detection.corners)
+    distance_cm = calculate_distance(tag_size_px)
+    
+    # Calculate frame center and tolerance zone
+    frame_center = frame_width / 2
+    tolerance = frame_width * CENTER_TOLERANCE
+    
+    # Determine direction based on tag position and distance
+    if distance_cm < DISTANCE_THRESHOLD:
+        return 'S', distance_cm  # Stop when close enough
+    
+    if center_x < frame_center - tolerance:
+        return 'L', distance_cm  # Turn left
+    elif center_x > frame_center + tolerance:
+        return 'R', distance_cm  # Turn right
+    else:
+        return 'F', distance_cm  # Move forward
 
 def preprocess_image(frame):
-    """Optimize image for tag detection"""
-    # Convert to grayscale - AprilTags work best with grayscale
-    gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+    """Advanced image preprocessing for better tag detection"""
+    # Convert to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     
-    # Apply adaptive histogram equalization with optimized parameters
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4,4))
+    # Apply advanced adaptive histogram equalization with higher clip limit
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(6,6))
     gray = clahe.apply(gray)
     
-    # Sharpen image to enhance edges (critical for tag detection)
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    gray = cv2.filter2D(gray, -1, kernel)
+    # Apply bilateral filter to preserve edges while reducing noise
+    gray = cv2.bilateralFilter(gray, 5, 75, 75)
     
-    # Optional: Apply very mild blur to reduce noise while preserving edges
-    # Uncomment if tags have noisy edges in certain lighting conditions
-    # gray = cv2.GaussianBlur(gray, (3,3), 0.3)
+    # Enhance contrast with wider range
+    gray = cv2.convertScaleAbs(gray, alpha=1.5, beta=15)
+    
+    # Apply sharper edge enhancement
+    kernel = np.array([[-1,-1,-1], [-1,9.5,-1], [-1,-1,-1]])
+    gray = cv2.filter2D(gray, -1, kernel)
     
     return gray
 
-def update_frame_display(frame):
-    """Update the display frame with thread safety"""
-    global global_frame
-    with frame_lock:
-        global_frame = frame.copy()
-
 def signal_handler(sig, frame):
-    """Handle shutdown signals gracefully"""
+    """Handle shutdown signals"""
     print("Shutting down...")
     shutdown_event.set()
     sys.exit(0)
 
-def flask_server():
-    """Run Flask server with proper error handling"""
-    try:
-        app.run(host='0.0.0.0', port=5000, threaded=True)
-    except Exception as e:
-        print(f"Flask server error: {e}")
-
 def main():
-    global last_direction, global_frame
-    last_print_time = 0
-    PRINT_INTERVAL = 0.5  # Only print debug info every 0.5 seconds
-    
-    # Setup tag tracking
-    last_tag_positions = {}
-    tag_tracking_threshold = 50  # pixels
-
-    # Setup signal handler for clean shutdown
+    # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -283,152 +191,191 @@ def main():
         return
 
     # Initialize hardware
+    camera = setup_camera()
     arduino = setup_serial()
-    picam2 = setup_camera()
     
-    if not picam2:
+    if arduino is None and ARDUINO_ENABLED:
+        print("Arduino connection failed, continuing in command display mode")
+    
+    if not camera:
         print("Failed to initialize camera. Exiting.")
         return
-        
+    
+    # Initialize AprilTag detector with optimal settings for maximum range
+    # Using only parameters supported by the installed version of pupil_apriltags
     detector = Detector(
         families="tag36h11",
         nthreads=4,           # Use all cores on Pi 4
-        quad_decimate=1.0,    # No decimation for max accuracy with higher resolution
-        quad_sigma=0.2,       # Reduced blur for sharper edges
-        refine_edges=True,    # Important for accurate corner detection
-        decode_sharpening=0.5,# Increased sharpening for better detection
+        quad_decimate=1.0,    # No decimation for maximum range
+        quad_sigma=0.6,       # Slightly higher blur for better detection at distance
+        refine_edges=True,
+        decode_sharpening=0.7,# Increased sharpening for cleaner tag reading
         debug=False
     )
-
-    stream = StreamCapture(picam2)
-    stream.start()
     
-    # Create a status frame to show at startup
-    status_frame = np.zeros((CAMERA_HEIGHT, CAMERA_WIDTH, 3), dtype=np.uint8)
-    cv2.putText(status_frame, "Starting camera...", (50, CAMERA_HEIGHT//2), 
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-    update_frame_display(status_frame)
+    # Command smoothing variables
+    last_commands = []
+    MAX_HISTORY = 3
     
-    if SHOW_FEED:
-        flask_thread = Thread(target=flask_server, daemon=True)
-        flask_thread.start()
+    # Detection enhancement variables
+    detection_confidence_threshold = 0.5  # Min confidence to accept a detection
+    tag_history = {}  # Track recent tag positions for prediction
     
-    frame_count = 0
-    last_frame_time = 0
-    FRAME_INTERVAL = 1/30  # Target 30fps processing
+    # Timing variables
     last_command_time = 0
-    COMMAND_INTERVAL = 0.2  # Minimum time between commands
-
+    command_interval = 0.1  # 100ms between commands
+    last_frame_time = 0
+    
+    print("AprilTag detection system running...")
+    
     try:
         while not shutdown_event.is_set():
             current_time = time.time()
             
-            # Enforce frame rate limit to avoid overwhelming the Pi
-            if current_time - last_frame_time < FRAME_INTERVAL:
-                time.sleep(0.001)  # Small sleep to reduce CPU usage
+            # Limit frame rate to avoid overwhelming the CPU
+            if current_time - last_frame_time < DETECTION_INTERVAL:
+                time.sleep(0.001)  # Short sleep to prevent CPU hogging
                 continue
                 
             last_frame_time = current_time
             
+            # Capture frame
             try:
-                frame = frame_queue.get(timeout=0.5)
-            except queue.Empty:
+                frame = camera.capture_array("main")
+                if frame is None:
+                    print("Error: Empty frame captured")
+                    time.sleep(0.1)
+                    continue
+            except Exception as e:
+                print(f"Camera capture error: {e}")
+                time.sleep(0.1)
                 continue
-
-            # Skip frame processing based on SKIP_FRAMES setting
-            frame_count += 1
-            if frame_count % SKIP_FRAMES != 0:
-                if SHOW_FEED:
-                    update_frame_display(frame)  # Still show unprocessed frames
-                continue
-
-            # Process frame with optimized pipeline
+            
+            # Try multiple preprocessing techniques for challenging conditions
             processed = preprocess_image(frame)
+            
+            # Detect AprilTags with the primary processing
             detections = detector.detect(processed)
-
+            
+            # If no detections with primary method, try alternative processing
+            if not detections:
+                # Alternative processing for different lighting conditions
+                # 1. Higher contrast for low light
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                alt_processed = cv2.convertScaleAbs(gray, alpha=2.0, beta=30)
+                detections = detector.detect(alt_processed)
+                
+                # 2. If still no detections, try adaptive thresholding
+                if not detections:
+                    adaptive_thresh = cv2.adaptiveThreshold(
+                        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                        cv2.THRESH_BINARY, 11, 2
+                    )
+                    detections = detector.detect(adaptive_thresh)
+            
+            # Filter by decision margin (detection confidence)
             if detections:
-                # Track multiple tags
-                for detection in detections:
-                    tag_id = detection.tag_id
-                    center = detection.center
-                    
-                    # Update tracking dictionary
-                    last_tag_positions[tag_id] = {
-                        'center': center,
-                        'time': current_time,
-                        'corners': detection.corners
-                    }
+                detections = [d for d in detections if d.decision_margin > detection_confidence_threshold]
                 
-                # Find the most relevant tag (closest to center, or by preferred ID if needed)
+            # Process each detected tag
+            if detections:
+                # Find the tag closest to the center of the frame (most likely the target)
                 main_tag = min(detections, key=lambda d: abs(d.center[0] - frame.shape[1]/2))
-                tag_size_px = estimate_tag_size(main_tag.corners)
-                direction, _ = get_direction(main_tag, frame.shape[1], DISTANCE_THRESHOLD)
-                distance_cm = (FOCAL_LENGTH_PX * TAG_REAL_SIZE_CM) / tag_size_px
-
-                # Only send commands at intervals and when direction changes
-                if current_time - last_command_time >= COMMAND_INTERVAL:
-                    if arduino:
-                        tag_data = f"TAG:{main_tag.tag_id},{distance_cm:.1f},{direction}\n"
-                        arduino.write(tag_data.encode())
-                        arduino.flush()
-                        last_direction = direction
+                
+                # Update tag history for this tag ID
+                if main_tag.tag_id not in tag_history:
+                    tag_history[main_tag.tag_id] = []
+                
+                # Store detection with timestamp
+                tag_history[main_tag.tag_id].append({
+                    'time': current_time,
+                    'center': main_tag.center,
+                    'corners': main_tag.corners
+                })
+                
+                # Keep only recent history (last 1 second)
+                tag_history[main_tag.tag_id] = [
+                    d for d in tag_history[main_tag.tag_id] 
+                    if current_time - d['time'] < 1.0
+                ]
+                
+                # Calculate direction and distance
+                direction, distance_cm = get_direction(main_tag, frame.shape[1])
+                
+                # Apply command smoothing
+                last_commands.append(direction)
+                if len(last_commands) > MAX_HISTORY:
+                    last_commands.pop(0)
+                
+                # Use majority vote for stable commands
+                if len(last_commands) == MAX_HISTORY:
+                    from collections import Counter
+                    direction = Counter(last_commands).most_common(1)[0][0]
+                
+                # Send command to Arduino at specified intervals
+                current_time = time.time()
+                if arduino and current_time - last_command_time >= command_interval:
+                    tag_data = TagData(
+                        tag_id=main_tag.tag_id, 
+                        distance=distance_cm, 
+                        direction=direction
+                    )
+                    arduino.send_tag_data(tag_data)
                     last_command_time = current_time
-
-                # Print debug info at intervals
-                if VERBOSE and current_time - last_print_time >= PRINT_INTERVAL:
-                    print(f"Tag {main_tag.tag_id} | Dist: {distance_cm:.1f}cm | Dir: {direction}")
-                    last_print_time = current_time
-
-                if SHOW_FEED:
-                    # Draw all detected tags with different colors based on tracking history
-                    for detection in detections:
-                        pts = detection.corners.astype(int)
-                        cv2.polylines(frame, [pts.reshape((-1,1,2))], True, (0,255,0), 2)
-                        cv2.putText(frame, f"ID:{detection.tag_id}", 
-                                  tuple(pts[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+                elif arduino is None and current_time - last_command_time >= command_interval:
+                    # Display command indications when Arduino is not connected
+                    command_text = {
+                        'F': "FORWARD",
+                        'B': "BACKWARD",
+                        'L': "LEFT",
+                        'R': "RIGHT",
+                        'S': "STOP"
+                    }.get(direction, "UNKNOWN")
                     
-                    # Highlight the main tag
-                    pts = main_tag.corners.astype(int)
-                    cv2.polylines(frame, [pts.reshape((-1,1,2))], True, (0,255,255), 3)
-                    cv2.putText(frame, f"MAIN ID:{main_tag.tag_id} D:{int(distance_cm)}cm",
-                              (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,255), 2)
-            else:
-                # Clean up old tag positions
-                current_tags = list(last_tag_positions.keys())
-                for tag_id in current_tags:
-                    if current_time - last_tag_positions[tag_id]['time'] > 2.0:  # Remove after 2 seconds
-                        del last_tag_positions[tag_id]
-                
-                if current_time - last_print_time >= PRINT_INTERVAL:
-                    if VERBOSE:
-                        print("No tags detected")
-                    last_print_time = current_time
-                
-                if current_time - last_command_time >= COMMAND_INTERVAL:
-                    if arduino:
-                        arduino.write(b'S')  # Stop command when no tags detected
-                        arduino.flush()
+                    print(f"COMMAND: {command_text} | Tag {main_tag.tag_id} | Distance: {distance_cm:.1f}cm")
                     last_command_time = current_time
-
-            if SHOW_FEED:
-                # Add overlay with detection stats
-                cv2.putText(frame, f"Tags: {len(detections)}", 
-                          (frame.shape[1]-150, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,0), 2)
-                update_frame_display(frame)
-
-    except KeyboardInterrupt:
-        print("\nShutting down...")
+                
+                # Print detection information with enhanced details
+                if VERBOSE:
+                    print(f"Tag {main_tag.tag_id} | Dist: {distance_cm:.1f}cm | Dir: {direction} | " 
+                          f"Conf: {main_tag.decision_margin:.3f} | "
+                          f"Size: {estimate_tag_size(main_tag.corners):.1f}px")
+                    
+            else:
+                # No tags detected
+                last_commands = []  # Clear command history
+                
+                # Send stop command when no tags are visible
+                current_time = time.time()
+                if arduino and current_time - last_command_time >= command_interval:
+                    arduino.send_stop()
+                    last_command_time = current_time
+                elif arduino is None and current_time - last_command_time >= command_interval:
+                    # Display stop command when no tags are detected and Arduino is not connected
+                    print("COMMAND: STOP | No tags detected")
+                    last_command_time = current_time
+            
+            # Brief pause to reduce CPU load
+            time.sleep(0.001)
+            
+    except Exception as e:
+        print(f"Unexpected error: {e}")
     finally:
-        shutdown_event.set()  # Signal all threads to stop
-        stream.stop()
-        if picam2:
+        # Clean shutdown
+        shutdown_event.set()
+        
+        if camera:
             try:
-                picam2.stop()
-            except Exception:
+                camera.stop()
+                print("Camera stopped")
+            except:
                 pass
+                
         if arduino:
-            arduino.close()
-        print("Shutdown complete")
+            arduino.disconnect()
+            print("Serial connection closed")
+        
+        print("System shutdown complete")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
