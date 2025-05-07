@@ -28,7 +28,7 @@ FOCAL_LENGTH_PX = 920     # Increased focal length estimate for better distance 
 TAG_SIZE_CM = 15          # Physical tag size in cm
 
 # Arduino communication
-ARDUINO_ENABLED = False   # Set to False when Arduino is not connected
+ARDUINO_ENABLED = False    # Enable Arduino communication
 SERIAL_PORT = '/dev/ttyACM0'
 BAUD_RATE = 115200
 

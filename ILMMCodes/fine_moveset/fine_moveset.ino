@@ -30,16 +30,16 @@ NEW SKETCH
 // Ultrasonic Sensor Pins
 #define TRIG_F 22
 #define ECHO_F 23
-#define TRIG_FL 24
-#define ECHO_FL 25
-#define TRIG_FR 26
-#define ECHO_FR 27
+#define TRIG_FL 26
+#define ECHO_FL 27
+#define TRIG_FR 24
+#define ECHO_FR 25
 #define TRIG_BL 28
 #define ECHO_BL 29
-#define TRIG_BR 30
-#define ECHO_BR 31
-#define TRIG_B 32
-#define ECHO_B 33
+#define TRIG_BR 32
+#define ECHO_BR 33
+#define TRIG_B 30
+#define ECHO_B 31
 
 // === Enhanced Configuration ===
 const float CRITICAL_DISTANCE = 10.0;  // Emergency stop distance (cm)
