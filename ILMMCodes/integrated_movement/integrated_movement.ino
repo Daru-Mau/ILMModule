@@ -52,18 +52,18 @@ const float ACCEL_RATE = 0.15f;  // Speed change per cycle (0-1)
 #define ENC_BACK_C2 53
 
 // Ultrasonic Sensor Pins
-#define TRIG_F 22
-#define ECHO_F 23
-#define TRIG_FL 26
-#define ECHO_FL 27
-#define TRIG_FR 24
-#define ECHO_FR 25
-#define TRIG_BL 28
-#define ECHO_BL 29
-#define TRIG_BR 32
-#define ECHO_BR 33
-#define TRIG_B 30
-#define ECHO_B 31
+#define TRIG_B 24
+#define ECHO_B 25
+#define TRIG_BL 26
+#define ECHO_BL 27
+#define TRIG_BR 28
+#define ECHO_BR 29
+#define TRIG_FL 30
+#define ECHO_FL 31
+#define TRIG_F 32
+#define ECHO_F 33
+#define TRIG_FR 34
+#define ECHO_FR 35
 
 // === Enhanced Configuration ===
 const float CRITICAL_DISTANCE = 10.0;  // Emergency stop distance (cm)
