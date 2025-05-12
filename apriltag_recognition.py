@@ -36,7 +36,7 @@ CAM_CX = CAMERA_WIDTH / 2  # Principal point x-coordinate
 CAM_CY = CAMERA_HEIGHT / 2  # Principal point y-coordinate
 
 # Arduino communication
-ARDUINO_ENABLED = False    # Enable Arduino communication
+ARDUINO_ENABLED = True    # Enable Arduino communication
 SERIAL_PORT = '/dev/ttyACM0'
 BAUD_RATE = 115200
 

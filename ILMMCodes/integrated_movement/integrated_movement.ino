@@ -87,6 +87,10 @@ float distFL, distF, distFR, distBL, distB, distBR;
 float currentSpeed = 0.0;
 bool emergencyStop = false;
 
+// Forward declarations for functions used by AprilTagController
+void stopAllMotors();
+void moveRobot(float vy, float vx, float omega);
+
 // AprilTag tracking states
 enum TrackingState
 {
