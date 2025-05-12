@@ -373,29 +373,32 @@ void moveRobot(float vy, float vx, float omega) {
     int rightPWM = abs(rightSpeed) * speedScale;
     int backPWM = abs(backSpeed) * speedScale;
     
-    // Adjust speeds based on obstacle proximity
+    // Adjust speeds based on obstacle proximity and motor contribution to movement
+    // Left motor: positive = forward-left movement, negative = backward-right movement
     if (leftSpeed > 0) {
-        // Moving in a direction that involves the left motor forward
-        leftPWM = calculateDynamicSpeed(leftSpeed > 0 ? forwardDist : backwardDist, leftPWM);
+        // When left motor is positive, it contributes to forward-left movement
+        leftPWM = calculateDynamicSpeed(min(forwardDist, leftDist), leftPWM);
     } else if (leftSpeed < 0) {
-        // Moving in a direction that involves the left motor backward
-        leftPWM = calculateDynamicSpeed(leftSpeed < 0 ? backwardDist : forwardDist, leftPWM);
+        // When left motor is negative, it contributes to backward-right movement
+        leftPWM = calculateDynamicSpeed(min(backwardDist, rightDist), leftPWM);
     }
     
+    // Right motor: positive = forward-right movement, negative = backward-left movement
     if (rightSpeed > 0) {
-        // Moving in a direction that involves the right motor forward
-        rightPWM = calculateDynamicSpeed(rightSpeed > 0 ? forwardDist : backwardDist, rightPWM);
+        // When right motor is positive, it contributes to forward-right movement
+        rightPWM = calculateDynamicSpeed(min(forwardDist, rightDist), rightPWM);
     } else if (rightSpeed < 0) {
-        // Moving in a direction that involves the right motor backward
-        rightPWM = calculateDynamicSpeed(rightSpeed < 0 ? backwardDist : forwardDist, rightPWM);
+        // When right motor is negative, it contributes to backward-left movement
+        rightPWM = calculateDynamicSpeed(min(backwardDist, leftDist), rightPWM);
     }
     
+    // Back motor: positive = right movement, negative = left movement
     if (backSpeed > 0) {
-        // Moving in a direction that involves the back motor forward
-        backPWM = calculateDynamicSpeed(backSpeed > 0 ? rightDist : leftDist, backPWM);
+        // When back motor is positive, it contributes to rightward movement
+        backPWM = calculateDynamicSpeed(rightDist, backPWM);
     } else if (backSpeed < 0) {
-        // Moving in a direction that involves the back motor backward
-        backPWM = calculateDynamicSpeed(backSpeed < 0 ? leftDist : rightDist, backPWM);
+        // When back motor is negative, it contributes to leftward movement
+        backPWM = calculateDynamicSpeed(leftDist, backPWM);
     }
     
     // Apply direction based on sign
