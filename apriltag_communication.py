@@ -49,7 +49,14 @@ class ArduinoCommunicator:
         """Establish connection to Arduino"""
         try:
             self.serial = serial.Serial(self.port, self.baud_rate, timeout=1)
-            time.sleep(1)  # Allow Arduino to reset
+            # Give Arduino more time to reset and initialize
+            time.sleep(2)  
+            
+            # Clear any initialization data that might be in the buffer
+            if self.serial.in_waiting:
+                initial_data = self.serial.read(self.serial.in_waiting)
+                logger.debug(f"Cleared initialization data: {initial_data}")
+            
             self.connected = True
             logger.info(f"Connected to Arduino on {self.port}")
             return True
@@ -71,6 +78,14 @@ class ArduinoCommunicator:
             logger.warning("Cannot send command: not connected")
             return False
         
+        # Ensure proper line endings (carriage return + newline)
+        # This matches the Arduino IDE Serial Monitor default behavior
+        if not command.endswith('\r\n'):
+            if command.endswith('\n'):
+                command = command.rstrip('\n') + '\r\n'
+            else:
+                command = command + '\r\n'
+                
         for attempt in range(RETRY_COUNT):
             try:
                 self.serial.write(command.encode())
@@ -83,6 +98,60 @@ class ArduinoCommunicator:
         logger.error("Failed to send command after retries")
         self.connected = False
         return False
+
+    def _get_response(self, timeout=0.5) -> str:
+        """Get response from Arduino with timeout"""
+        if not self.connected or not self.serial:
+            return ""
+        
+        start_time = time.time()
+        response = ""
+        response_received = False
+        
+        while (time.time() - start_time) < timeout:
+            if self.serial.in_waiting > 0:
+                response_received = True
+                chunk = self.serial.readline().decode('ascii', errors='ignore').strip()
+                if chunk:
+                    response += chunk + " "
+            elif response_received:
+                # If we've already received data and buffer is now empty, we can exit
+                break
+            else:
+                # Small delay to prevent CPU hogging while waiting for response
+                time.sleep(0.01)
+        
+        return response.strip()
+    
+    def send_test_command(self) -> bool:
+        """Send test command and verify Arduino response"""
+        success = self._send_command("TEST\n")
+        if not success:
+            return False
+            
+        # Wait for response
+        response = self._get_response(1.0)  # Longer timeout for test command
+        logger.info(f"Arduino TEST response: {response}")
+        
+        # Check if response contains expected strings
+        return "sensor" in response.lower() or "distance" in response.lower() or "ready" in response.lower()
+    
+    def ping(self) -> bool:
+        """Ping Arduino to check if it's responsive"""
+        if not self.connected:
+            return False
+            
+        # Clear any pending data
+        if self.serial and self.serial.in_waiting:
+            self.serial.read(self.serial.in_waiting)
+            
+        success = self._send_command("PING\n")
+        if not success:
+            return False
+            
+        # Check for any response within timeout
+        response = self._get_response(0.5)
+        return len(response) > 0
     
     def send_tag_data(self, tag_data: TagData) -> bool:
         """Send tag detection data to Arduino"""
@@ -95,6 +164,9 @@ class ArduinoCommunicator:
         
         if success:
             self.last_tag = tag_data
+            response = self._get_response(0.2)
+            if response:
+                logger.debug(f"Arduino response: {response}")
             
         return success
     
@@ -125,6 +197,11 @@ def main():
     """Demo usage of the ArduinoCommunicator class"""
     communicator = ArduinoCommunicator()
     if communicator.connect():
+        # Send test command to verify Arduino is responding
+        print("Sending TEST command to Arduino...")
+        test_success = communicator.send_test_command()
+        print(f"Arduino TEST response: {'Successful' if test_success else 'Failed'}")
+        
         # Send test commands
         tag = TagData(tag_id=1, distance=50.0, direction='F')
         communicator.send_tag_data(tag)

@@ -48,6 +48,12 @@ DETECTION_INTERVAL = 0.1  # 10 FPS for more reliable processing
 CENTER_TOLERANCE = 0.15   # Percentage of frame width for center tolerance
 DISTANCE_THRESHOLD = 30   # Distance (cm) threshold for movement decisions
 
+# Debug settings - ADDED FOR TROUBLESHOOTING
+DEBUG_MODE = True         # Enable additional debug messages
+SAVE_DEBUG_FRAMES = False  # Save processed frames for debugging
+DEBUG_FRAME_INTERVAL = 5.0 # Save a debug frame every 5 seconds
+last_debug_frame_time = 0
+
 # === Global state ===
 shutdown_event = Event()
 
@@ -88,9 +94,18 @@ def setup_camera():
         time.sleep(0.5)  # Short delay for camera initialization
         
         # Fine-tune the exposure parameters - removed unsupported parameters
-        picam.set_controls({
-            "FrameDurationLimits": (33333, 66666)  # Set min/max frame duration based on imx219.json
-        })
+        try:
+            picam.set_controls({
+                "FrameDurationLimits": (33333, 66666)  # Set min/max frame duration based on imx219.json
+            })
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"INFO: Could not set FrameDurationLimits: {e}")
+        
+        # ADDED: Print confirmation of camera initialization
+        if DEBUG_MODE:
+            print(f"Camera initialized with resolution {CAMERA_WIDTH}x{CAMERA_HEIGHT}")
+            print(f"Camera controls: {picam.camera_controls}")
         
         return picam
         
@@ -113,6 +128,13 @@ def setup_serial():
         communicator = ArduinoCommunicator(SERIAL_PORT, BAUD_RATE)
         if communicator.connect():
             print("Arduino connected successfully")
+            # ADDED: Send test command to confirm communication
+            if DEBUG_MODE:
+                time.sleep(0.5)  # Give Arduino time to initialize
+                if communicator.send_test_command():
+                    print("Arduino communication verified - TEST command successful")
+                else:
+                    print("WARNING: Arduino test command failed. Check Arduino response.")
             return communicator
         else:
             print("Failed to connect to Arduino")
@@ -253,6 +275,8 @@ def main():
         print("Failed to initialize camera. Exiting.")
         return
     
+    print("Setting up AprilTag detector...")
+    
     # Initialize AprilTag detector with optimal settings for maximum range
     # Using only parameters supported by the installed version of pupil_apriltags
     detector = Detector(
@@ -277,12 +301,27 @@ def main():
     last_command_time = 0
     command_interval = 0.1  # 100ms between commands
     last_frame_time = 0
+    frame_count = 0  # ADDED: Count frames for debugging
+    last_status_time = 0  # ADDED: For periodic status updates
     
     print("AprilTag detection system running...")
+    # ADDED: Print initial configuration
+    print(f"Tag family: tag36h11, Confidence threshold: {detection_confidence_threshold}")
+    print(f"Arduino enabled: {ARDUINO_ENABLED}, Port: {SERIAL_PORT}")
     
     try:
         while not shutdown_event.is_set():
             current_time = time.time()
+            
+            # ADDED: Print periodic status updates
+            if DEBUG_MODE and current_time - last_status_time > 5:
+                print(f"System running. Processed {frame_count} frames. Waiting for AprilTags...")
+                last_status_time = current_time
+                
+                # Send a test ping to Arduino periodically
+                if arduino and current_time - last_status_time > 10:
+                    if not arduino.ping():
+                        print("WARNING: Arduino not responding to ping")
             
             # Limit frame rate to avoid overwhelming the CPU
             if current_time - last_frame_time < DETECTION_INTERVAL:
@@ -290,6 +329,7 @@ def main():
                 continue
                 
             last_frame_time = current_time
+            frame_count += 1  # ADDED: Increment frame count
             
             # Capture frame
             try:
@@ -303,11 +343,27 @@ def main():
                 time.sleep(0.1)
                 continue
             
+            # ADDED: Save debug frame periodically
+            if SAVE_DEBUG_FRAMES and current_time - last_debug_frame_time > DEBUG_FRAME_INTERVAL:
+                try:
+                    os.makedirs("debug_frames", exist_ok=True)
+                    cv2.imwrite(f"debug_frames/frame_{int(current_time)}.jpg", frame)
+                    last_debug_frame_time = current_time
+                    print(f"Saved debug frame: debug_frames/frame_{int(current_time)}.jpg")
+                except Exception as e:
+                    print(f"Error saving debug frame: {e}")
+            
             # Try multiple preprocessing techniques for challenging conditions
             processed = preprocess_image(frame)
             
             # Detect AprilTags with the primary processing
             detections = detector.detect(processed)
+            
+            # ADDED: Debug detection attempts
+            if DEBUG_MODE and (frame_count % 30 == 0):  # Every ~3 seconds (at 10 FPS)
+                print(f"Detection attempt: {len(detections)} tags found")
+                if not detections:
+                    print("No tags found in frame. Check lighting and tag visibility.")
             
             # If no detections with primary method, try alternative processing
             if not detections:
@@ -364,6 +420,9 @@ def main():
                     from collections import Counter
                     direction = Counter(last_commands).most_common(1)[0][0]
                 
+                # ADDED: Print tag detection info with more details
+                print(f"*** TAG DETECTED: ID={main_tag.tag_id}, Pos=({main_tag.center[0]:.1f}, {main_tag.center[1]:.1f}), Dir={direction}, Dist={distance_cm:.1f}cm ***")
+                
                 # Send command to Arduino at specified intervals
                 current_time = time.time()
                 if arduino and current_time - last_command_time >= command_interval:
@@ -372,7 +431,11 @@ def main():
                         distance=distance_cm, 
                         direction=direction
                     )
-                    arduino.send_tag_data(tag_data)
+                    success = arduino.send_tag_data(tag_data)
+                    # ADDED: Debug for arduino communication
+                    if DEBUG_MODE:
+                        cmd_str = f"TAG:{main_tag.tag_id},{distance_cm:.1f},{direction}"
+                        print(f"→ Sent to Arduino: {cmd_str} - {'Success' if success else 'FAILED'}")
                     last_command_time = current_time
                 elif arduino is None and current_time - last_command_time >= command_interval:
                     # Display command indications when Arduino is not connected
@@ -400,11 +463,15 @@ def main():
                 # Send stop command when no tags are visible
                 current_time = time.time()
                 if arduino and current_time - last_command_time >= command_interval:
-                    arduino.send_stop()
+                    success = arduino.send_stop()
+                    # ADDED: Debug for stop command
+                    if DEBUG_MODE and (frame_count % 10 == 0):  # Limit frequency of these messages
+                        print(f"→ Sent to Arduino: STOP - {'Success' if success else 'FAILED'}")
                     last_command_time = current_time
                 elif arduino is None and current_time - last_command_time >= command_interval:
                     # Display stop command when no tags are detected and Arduino is not connected
-                    print("COMMAND: STOP | No tags detected")
+                    if frame_count % 10 == 0:  # Limit frequency of these messages
+                        print("COMMAND: STOP | No tags detected")
                     last_command_time = current_time
             
             # Brief pause to reduce CPU load
@@ -412,6 +479,9 @@ def main():
             
     except Exception as e:
         print(f"Unexpected error: {e}")
+        # ADDED: More detailed exception info
+        import traceback
+        traceback.print_exc()
     finally:
         # Clean shutdown
         shutdown_event.set()

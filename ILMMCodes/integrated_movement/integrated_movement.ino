@@ -18,8 +18,9 @@
 #define CONTROL_LOOP_INTERVAL 50  // 20Hz control loop
 #define POSITION_TOLERANCE 5.0f   // mm
 #define ROTATION_TOLERANCE 0.05f  // radians
-#define MAX_SPEED 255
-#define MIN_SPEED 50
+#define MAX_SPEED 50
+#define MIN_SPEED 40
+#define DEBUG_MODE true          // Set to true for verbose output, false for reduced output
 
 // Optimized movement parameters
 const float PID_KP = 2.0f;
@@ -29,13 +30,13 @@ const float ACCEL_RATE = 0.15f;  // Speed change per cycle (0-1)
 
 // === Pin Definitions === (Combined from both sketches)
 
-// Motor Driver Pins
-#define RPWM_RIGHT 3
-#define LPWM_RIGHT 2
+// Motor Driver Pins - UPDATED to match basic_moveset.ino configuration
+#define RPWM_RIGHT 2  // Changed from 3 to 2
+#define LPWM_RIGHT 3  // Changed from 2 to 3
 #define REN_RIGHT 39
 #define LEN_RIGHT 38
-#define RPWM_LEFT 4
-#define LPWM_LEFT 5
+#define RPWM_LEFT 5   // Changed from 4 to 5
+#define LPWM_LEFT 4   // Changed from 5 to 4
 #define REN_LEFT 44
 #define LEN_LEFT 45
 #define RPWM_BACK 7
@@ -460,8 +461,18 @@ AprilTagController tagController;
 // === SETUP AND LOOP FUNCTIONS ===
 
 void setup() {
+    // Clear any existing serial data and reset connection
+    Serial.end();
+    delay(100);
+    
     // Initialize serial with higher baud rate
     Serial.begin(SERIAL_BAUD_RATE);
+    delay(500);  // Give serial time to initialize
+    
+    // Clear any pending data
+    while(Serial.available()) {
+        Serial.read();
+    }
     
     // Setup motors
     setupMotorPins(motorLeft);
@@ -477,8 +488,44 @@ void setup() {
         pinMode(echoPins[i], INPUT);
     }
     
-    Serial.println(F("Integrated Movement Controller Initialized"));
+    Serial.println(F("\n=================================="));
+    Serial.println(F("Integrated Movement Controller v1.0"));
     Serial.println(F("April Tag tracking with obstacle avoidance"));
+    Serial.println(F("Commands: TAG:id,distance,direction | TEST | STOP | PING"));
+    Serial.println(F("=================================="));
+    
+    // Test motors with a quick pulse to confirm they're working
+    if (DEBUG_MODE) {
+        Serial.println(F("Testing motors..."));
+        testMotors();
+    }
+}
+
+// Quick motor test function
+void testMotors() {
+    // Very brief pulse on each motor to confirm connections
+    const int testSpeed = 40;  // Lower speed for safety
+    const int testDuration = 100;  // Very short duration (ms)
+    
+    // Test left motor
+    Serial.println(F("Testing left motor..."));
+    moveMotor(motorLeft, FORWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorLeft, STOP, 0);
+    
+    // Test right motor
+    Serial.println(F("Testing right motor..."));
+    moveMotor(motorRight, FORWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorRight, STOP, 0);
+    
+    // Test back motor
+    Serial.println(F("Testing back motor..."));
+    moveMotor(motorBack, FORWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorBack, STOP, 0);
+    
+    Serial.println(F("Motor test complete."));
 }
 
 void loop() {
@@ -493,19 +540,32 @@ void loop() {
         updateDistances();
         lastSensorUpdate = now;
         
-        // Print distance readings periodically
-        Serial.print("Distances (cm) - FL: ");
-        Serial.print(distFL);
-        Serial.print(" F: ");
-        Serial.print(distF);
-        Serial.print(" FR: ");
-        Serial.print(distFR);
-        Serial.print(" BL: ");
-        Serial.print(distBL);
-        Serial.print(" B: ");
-        Serial.print(distB);
-        Serial.print(" BR: ");
-        Serial.println(distBR);
+        // Print distance readings periodically (only in debug mode)
+        static unsigned long lastPrintTime = 0;
+        if (DEBUG_MODE && (now - lastPrintTime >= 1000)) {  // 1 second interval for debug output
+            Serial.print("Distances (cm) - FL: ");
+            Serial.print(distFL);
+            Serial.print(" F: ");
+            Serial.print(distF);
+            Serial.print(" FR: ");
+            Serial.print(distFR);
+            Serial.print(" BL: ");
+            Serial.print(distBL);
+            Serial.print(" B: ");
+            Serial.print(distB);
+            Serial.print(" BR: ");
+            Serial.println(distBR);
+            
+            // Print current state information
+            Serial.print("State: ");
+            if (tagController.isActive()) {
+                Serial.println("TAG TRACKING ACTIVE");
+            } else {
+                Serial.println("IDLE - Waiting for commands");
+            }
+            
+            lastPrintTime = now;
+        }
     }
     
     // Run tag controller at fixed intervals
@@ -536,11 +596,18 @@ void processSerialInput() {
 }
 
 void parseCommand(const char* cmd) {
+    // Debug: Echo received command if in debug mode
+    if (DEBUG_MODE) {
+        Serial.print("Received command: ");
+        Serial.println(cmd);
+    }
+    
     if (strncmp(cmd, "TAG:", 4) == 0) {
         // Original format: TAG:x,y,yaw
         float x = 0, y = 0, yaw = 0;
         if (sscanf(cmd + 4, "%f,%f,%f", &x, &y, &yaw) == 3) {
             tagController.updateTagData(x, y, yaw);
+            Serial.println("ACK: Tag position updated");
             return;
         }
         
@@ -556,34 +623,44 @@ void parseCommand(const char* cmd) {
             switch (direction) {
                 case 'F': // Forward
                     y = distance;
+                    if (DEBUG_MODE) Serial.println("Moving FORWARD");
                     break;
                 case 'B': // Backward
                     y = -distance;
+                    if (DEBUG_MODE) Serial.println("Moving BACKWARD");
                     break;
                 case 'L': // Left
                     x = -distance;
                     yaw = PI/2; // 90 degrees
+                    if (DEBUG_MODE) Serial.println("Moving LEFT");
                     break;
                 case 'R': // Right
                     x = distance;
                     yaw = -PI/2; // -90 degrees
+                    if (DEBUG_MODE) Serial.println("Moving RIGHT");
                     break;
                 case 'S': // Stop
                     // All zeros, no movement
+                    if (DEBUG_MODE) Serial.println("STOP command");
                     break;
                 default:
+                    Serial.println("ERROR: Invalid direction");
                     return; // Invalid direction
             }
             
             tagController.updateTagData(x, y, yaw);
+            Serial.println("ACK: Tag command processed");
+        } else {
+            Serial.println("ERROR: Invalid TAG format");
         }
     } else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "CLEAR") == 0) {
         // Stop robot and reset controller
         tagController.reset();
         stopAllMotors();
+        Serial.println("ACK: Stopped and reset");
     } else if (strncmp(cmd, "TEST", 4) == 0) {
         // Run sensor tests
-        Serial.println("Running sensor diagnostics:");
+        Serial.println("=== RUNNING DIAGNOSTICS ===");
         updateDistances();
         Serial.print("Distances (cm) - FL: ");
         Serial.print(distFL);
@@ -597,5 +674,13 @@ void parseCommand(const char* cmd) {
         Serial.print(distB);
         Serial.print(" BR: ");
         Serial.println(distBR);
+        Serial.println("=== DIAGNOSTIC COMPLETE ===");
+    } else if (strcmp(cmd, "PING") == 0) {
+        // Added to support the new ping method in apriltag_communication.py
+        Serial.println("PONG");
+    } else {
+        // Unknown command
+        Serial.print("ERROR: Unknown command: ");
+        Serial.println(cmd);
     }
 }

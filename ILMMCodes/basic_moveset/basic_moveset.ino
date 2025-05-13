@@ -4,13 +4,13 @@
 // === Pin Definitions ===
 
 // Motor Driver Pins
-#define RPWM_RIGHT 3 // Updated to match configuration
-#define LPWM_RIGHT 2 // Updated to match configuration
+#define RPWM_RIGHT 2// Updated to match configuration
+#define LPWM_RIGHT 3 // Updated to match configuration
 #define REN_RIGHT 39 // Kept original
 #define LEN_RIGHT 38 // Kept original
 
-#define RPWM_LEFT 4 // Updated to match configuration
-#define LPWM_LEFT 5 // Updated to match configuration
+#define RPWM_LEFT 5 // Updated to match configuration
+#define LPWM_LEFT 4 // Updated to match configuration
 #define REN_LEFT 44 // Updated to match configuration
 #define LEN_LEFT 45 // Updated to match configuration
 
@@ -21,7 +21,7 @@
 
 // Basic configuration
 const float OBSTACLE_DISTANCE = 15.0; // cm
-const int BASE_SPEED = 150;           // PWM value (0-255)
+const int BASE_SPEED = 50;           // PWM value (0-255)
 
 // Globals
 float distFL, distF, distFR, distBL, distB, distBR;
@@ -121,10 +121,26 @@ void testRotateRight(int duration = 1000)
 
 void setup()
 {
+  // Clear any existing serial data
+  Serial.end();
+  delay(100);
+  
+  // Start serial with proper baud rate
   Serial.begin(115200);
+  delay(1000); // Wait for serial to fully initialize
+  
+  // Clear any initial data
+  while(Serial.available()) {
+    Serial.read();
+  }
+  
   setupMotorPins(motorRight);
   setupMotorPins(motorLeft);
   setupMotorPins(motorBack);
+  
+  // Send initial messages
+  Serial.println();
+  Serial.println("=========================");
   Serial.println("Basic Movement Test System Ready");
   Serial.println("Commands:");
   Serial.println("F - Forward");
@@ -132,6 +148,7 @@ void setup()
   Serial.println("L - Rotate Left");
   Serial.println("R - Rotate Right");
   Serial.println("S - Stop");
+  Serial.println("=========================");
 }
 
 void loop()

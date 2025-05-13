@@ -11,7 +11,7 @@ Motor motorRight = {3, 2, 39, 38};
 Motor motorLeft = {4, 5, 44, 45};
 Motor motorBack = {7, 6, 51, 50};
 
-const int MOTOR_SPEED = 100; // Adjust speed from 0 to 255
+const int MOTOR_SPEED = 50; // Adjust speed from 0 to 255
 
 void setupMotor(Motor m)
 {
