@@ -29,10 +29,10 @@ except ImportError:
     sys.exit(1)
 
 # Default settings
-DEFAULT_PORT = '/dev/ttyACM0'
+DEFAULT_PORT = '/dev/ttyACM0'  # Updated to the correct port where Arduino is detected
 DEFAULT_BAUD_RATE = 115200
-DEFAULT_TEST_DURATION = 2.0  # seconds - increased from 1.0
-DEFAULT_SPEED = 150.0  # mm or arbitrary units - increased from 50.0 for better movement
+DEFAULT_TEST_DURATION = 2.0  # seconds
+DEFAULT_SPEED = 150.0  # mm or arbitrary units
 
 
 class MotorTester:
