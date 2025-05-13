@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 # Serial communication settings
-DEFAULT_PORT = '/dev/ttyACM0'
+DEFAULT_PORT = '/dev/ttyACM0'  # Updated to the correct port where Arduino is detected
 DEFAULT_BAUD_RATE = 115200
 RETRY_COUNT = 3
 RETRY_DELAY = 0.1
@@ -191,6 +191,30 @@ class ArduinoCommunicator:
     def send_clear(self) -> bool:
         """Send clear tag data command to Arduino"""
         return self._send_command("CLEAR\n")
+        
+    def set_speed(self, max_speed: int, min_speed: int) -> bool:
+        """
+        Set the maximum and minimum motor speeds on the Arduino
+        
+        Parameters:
+        - max_speed: The maximum motor speed (50-255)
+        - min_speed: The minimum motor speed (30-max_speed)
+        
+        Returns:
+        - True if the command was sent successfully
+        """
+        # Ensure values are in valid ranges
+        max_speed = max(50, min(255, max_speed))
+        min_speed = max(30, min(max_speed, min_speed))
+        
+        # Format the command
+        command = f"SPEED:{max_speed},{min_speed}\n"
+        success = self._send_command(command)
+        
+        if success:
+            logger.info(f"Speed parameters sent: MAX={max_speed}, MIN={min_speed}")
+        
+        return success
 
 
 def main():

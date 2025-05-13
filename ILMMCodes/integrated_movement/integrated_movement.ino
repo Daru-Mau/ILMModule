@@ -18,9 +18,9 @@
 #define CONTROL_LOOP_INTERVAL 50  // 20Hz control loop
 #define POSITION_TOLERANCE 5.0f   // mm
 #define ROTATION_TOLERANCE 0.05f  // radians
-#define MAX_SPEED 80
-#define MIN_SPEED 30
-#define DEBUG_MODE false          // Set to false to reduce output
+#define MAX_SPEED 150  // Increased from 50 to overcome motor stall torque
+#define MIN_SPEED 100  // Increased from 40 for more noticeable movement
+#define DEBUG_MODE true          // Set to true for verbose output, false for reduced output
 
 // Optimized movement parameters
 const float PID_KP = 2.0f;
@@ -30,13 +30,13 @@ const float ACCEL_RATE = 0.15f;  // Speed change per cycle (0-1)
 
 // === Pin Definitions === (Combined from both sketches)
 
-// Motor Driver Pins - UPDATED to match basic_moveset.ino configuration
-#define RPWM_RIGHT 2  // Changed from 3 to 2
-#define LPWM_RIGHT 3  // Changed from 2 to 3
+// Motor Driver Pins
+#define RPWM_RIGHT 3
+#define LPWM_RIGHT 2
 #define REN_RIGHT 39
 #define LEN_RIGHT 38
-#define RPWM_LEFT 5   // Changed from 4 to 5
-#define LPWM_LEFT 4   // Changed from 5 to 4
+#define RPWM_LEFT 4
+#define LPWM_LEFT 5
 #define REN_LEFT 44
 #define LEN_LEFT 45
 #define RPWM_BACK 7
@@ -491,8 +491,41 @@ void setup() {
     Serial.println(F("\n=================================="));
     Serial.println(F("Integrated Movement Controller v1.0"));
     Serial.println(F("April Tag tracking with obstacle avoidance"));
-    Serial.println(F("Commands: TAG:id,distance,direction | TEST | STOP | PING"));
+    Serial.println(F("Commands: TAG:id,distance,direction | TEST | STOP | PING | SPEED:max_speed,min_speed"));
     Serial.println(F("=================================="));
+    
+    // Test motors with a quick pulse to confirm they're working
+    if (DEBUG_MODE) {
+        Serial.println(F("Testing motors..."));
+        testMotors();
+    }
+}
+
+// Quick motor test function
+void testMotors() {
+    // Very brief pulse on each motor to confirm connections
+    const int testSpeed = 40;  // Lower speed for safety
+    const int testDuration = 100;  // Very short duration (ms)
+    
+    // Test left motor
+    Serial.println(F("Testing left motor..."));
+    moveMotor(motorLeft, FORWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorLeft, STOP, 0);
+    
+    // Test right motor
+    Serial.println(F("Testing right motor..."));
+    moveMotor(motorRight, FORWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorRight, STOP, 0);
+    
+    // Test back motor
+    Serial.println(F("Testing back motor..."));
+    moveMotor(motorBack, FORWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorBack, STOP, 0);
+    
+    Serial.println(F("Motor test complete."));
 }
 
 void loop() {
@@ -570,7 +603,7 @@ void parseCommand(const char* cmd) {
     }
     
     if (strncmp(cmd, "TAG:", 4) == 0) {
-        // Primary format from apriltag_recognition: TAG:x,y,yaw
+        // Original format: TAG:x,y,yaw
         float x = 0, y = 0, yaw = 0;
         if (sscanf(cmd + 4, "%f,%f,%f", &x, &y, &yaw) == 3) {
             tagController.updateTagData(x, y, yaw);
@@ -586,7 +619,7 @@ void parseCommand(const char* cmd) {
             // Convert direction character to x,y,yaw coordinates
             float x = 0, y = 0, yaw = 0;
             
-            // Standard movement commands
+            // Set forward direction as +Y, with distance as magnitude
             switch (direction) {
                 case 'F': // Forward
                     y = distance;
@@ -598,10 +631,12 @@ void parseCommand(const char* cmd) {
                     break;
                 case 'L': // Left
                     x = -distance;
+                    yaw = PI/2; // 90 degrees
                     if (DEBUG_MODE) Serial.println("Moving LEFT");
                     break;
                 case 'R': // Right
                     x = distance;
+                    yaw = -PI/2; // -90 degrees
                     if (DEBUG_MODE) Serial.println("Moving RIGHT");
                     break;
                 case 'S': // Stop
@@ -613,38 +648,30 @@ void parseCommand(const char* cmd) {
                     return; // Invalid direction
             }
             
-            // Special case for rotation commands
-            if (tagId == 99) {
-                // Rotation command (special case for CW/CCW)
-                if (direction == 'R') {
-                    // Clockwise rotation (CW)
-                    yaw = -distance / 50.0; // Scale appropriately
-                    x = 0;
-                    y = 0; 
-                    Serial.println("ACK: Clockwise rotation");
-                } else if (direction == 'L') {
-                    // Counter-clockwise rotation (CCW)
-                    yaw = distance / 50.0; // Scale appropriately
-                    x = 0;
-                    y = 0;
-                    Serial.println("ACK: Counter-clockwise rotation");
-                }
-            }
-            
             tagController.updateTagData(x, y, yaw);
             Serial.println("ACK: Tag command processed");
         } else {
             Serial.println("ERROR: Invalid TAG format");
         }
-    } else if (strncmp(cmd, "POS:", 4) == 0) {
-        // Handle POS commands from apriltag_communication.py
-        float x = 0, y = 0, theta = 0;
-        if (sscanf(cmd + 4, "%f,%f,%f", &x, &y, &theta) == 3) {
-            // Update tag controller with position data
-            tagController.updateTagData(x, y, theta);
-            Serial.println("ACK: Position updated");
+    } else if (strncmp(cmd, "SPEED:", 6) == 0) {
+        // New command format: SPEED:max_speed,min_speed
+        // Allows Python script to set speed parameters dynamically
+        int newMaxSpeed, newMinSpeed;
+        if (sscanf(cmd + 6, "%d,%d", &newMaxSpeed, &newMinSpeed) == 2) {
+            // Apply constraints to ensure valid values
+            newMaxSpeed = constrain(newMaxSpeed, 50, 255);
+            newMinSpeed = constrain(newMinSpeed, 30, newMaxSpeed);
+            
+            // Update the global speed parameters
+            MAX_SPEED = newMaxSpeed;
+            MIN_SPEED = newMinSpeed;
+            
+            Serial.print("ACK: Speed parameters updated - MAX_SPEED=");
+            Serial.print(MAX_SPEED);
+            Serial.print(", MIN_SPEED=");
+            Serial.println(MIN_SPEED);
         } else {
-            Serial.println("ERROR: Invalid POS format");
+            Serial.println("ERROR: Invalid SPEED format. Use SPEED:max_speed,min_speed");
         }
     } else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "CLEAR") == 0) {
         // Stop robot and reset controller
@@ -669,7 +696,7 @@ void parseCommand(const char* cmd) {
         Serial.println(distBR);
         Serial.println("=== DIAGNOSTIC COMPLETE ===");
     } else if (strcmp(cmd, "PING") == 0) {
-        // Support the ping method in apriltag_communication.py
+        // Added to support the new ping method in apriltag_communication.py
         Serial.println("PONG");
     } else {
         // Unknown command

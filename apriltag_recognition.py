@@ -37,7 +37,7 @@ CAM_CY = CAMERA_HEIGHT / 2  # Principal point y-coordinate
 
 # Arduino communication
 ARDUINO_ENABLED = True    # Enable Arduino communication
-SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_PORT = '/dev/ttyACM1'  # Updated from /dev/ttyACM0 to match connected port
 BAUD_RATE = 115200
 
 # Detection settings
@@ -256,6 +256,21 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def main():
+    # Parse command line arguments for speed settings
+    import argparse
+    parser = argparse.ArgumentParser(description='AprilTag Detection and Robot Control')
+    parser.add_argument('--max-speed', type=int, default=150,
+                        help='Maximum motor speed (50-255)')
+    parser.add_argument('--min-speed', type=int, default=100,
+                        help='Minimum motor speed (30-max_speed)')
+    parser.add_argument('--port', type=str, default=SERIAL_PORT,
+                        help=f'Serial port (default: {SERIAL_PORT})')
+    args = parser.parse_args()
+    
+    # Update serial port from arguments
+    global SERIAL_PORT
+    SERIAL_PORT = args.port
+    
     # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -267,6 +282,12 @@ def main():
     # Initialize hardware
     camera = setup_camera()
     arduino = setup_serial()
+    
+    # Set motor speed parameters if Arduino connection successful
+    if arduino:
+        print(f"Setting motor speeds - MAX: {args.max_speed}, MIN: {args.min_speed}")
+        if arduino.set_speed(args.max_speed, args.min_speed):
+            print("Motor speed parameters successfully updated")
     
     if arduino is None and ARDUINO_ENABLED:
         print("Arduino connection failed, continuing in command display mode")
