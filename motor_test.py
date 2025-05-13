@@ -4,12 +4,20 @@ Motor Test Script for the ILM Module
 This script allows testing of individual motors and movement patterns
 for the 3-wheeled holonomic robot.
 
-Compatible with integrated_movement.ino
+Features:
+- Automated motor tests
+- Direct serial communication mode
+- Support for both integrated_movement.ino and basic_moveset.ino
+
+Usage:
+- Automated tests: python motor_test.py --test [test_name]
+- Interactive mode: python motor_test.py --interactive
 """
 
 import time
 import argparse
 import sys
+import serial
 from typing import Optional
 
 # Import the Arduino communication class from existing module
@@ -221,6 +229,119 @@ class MotorTester:
         
         print("\n=== Motor Tests Completed ===")
         return True
+    
+    def interactive_mode(self) -> None:
+        """Run an interactive serial control session"""
+        if hasattr(self, 'arduino') and hasattr(self.arduino, 'serial') and self.arduino.serial:
+            # We'll use the existing serial connection
+            ser = self.arduino.serial
+            print("Using existing serial connection...")
+        else:
+            try:
+                ser = serial.Serial(DEFAULT_PORT, DEFAULT_BAUD_RATE, timeout=1)
+                time.sleep(2)  # Give Arduino time to reset
+                ser.reset_input_buffer()
+            except serial.SerialException as e:
+                print(f"Error opening serial port: {e}")
+                return
+            
+        print("\n==== Interactive Serial Control Mode ====")
+        print("Available commands:")
+        print("  1. Send 'F' (forward)")
+        print("  2. Send 'B' (backward)")
+        print("  3. Send 'L' (left)")
+        print("  4. Send 'R' (right)")
+        print("  5. Send 'S' (stop)")
+        print("  6. Send 'TEST' command")
+        print("  7. Send TAG command")
+        print("  8. Custom command")
+        print("  9. Quit")
+        
+        while True:
+            try:
+                choice = input("\nEnter command number (1-9): ")
+                
+                if choice == '1':
+                    print("Sending FORWARD ('F') command...")
+                    ser.write(b'F\r\n')
+                
+                elif choice == '2':
+                    print("Sending BACKWARD ('B') command...")
+                    ser.write(b'B\r\n')
+                
+                elif choice == '3':
+                    print("Sending LEFT ('L') command...")
+                    ser.write(b'L\r\n')
+                
+                elif choice == '4':
+                    print("Sending RIGHT ('R') command...")
+                    ser.write(b'R\r\n')
+                
+                elif choice == '5':
+                    print("Sending STOP ('S') command...")
+                    ser.write(b'S\r\n')
+                
+                elif choice == '6':
+                    print("Sending TEST command...")
+                    ser.write(b'TEST\r\n')
+                
+                elif choice == '7':
+                    tag_id = input("Enter tag ID (default: 0): ") or "0"
+                    distance = input("Enter distance/speed (default: 150): ") or "150"
+                    direction = input("Enter direction (F,B,L,R,S): ").upper() or "F"
+                    
+                    if direction not in ['F', 'B', 'L', 'R', 'S']:
+                        print("Invalid direction! Using F (forward).")
+                        direction = 'F'
+                        
+                    cmd = f"TAG:{tag_id},{distance},{direction}\r\n"
+                    print(f"Sending TAG command: {cmd.strip()}")
+                    ser.write(cmd.encode())
+                
+                elif choice == '8':
+                    custom_cmd = input("Enter custom command: ")
+                    if custom_cmd:
+                        if not custom_cmd.endswith('\r\n'):
+                            custom_cmd += '\r\n'
+                        print(f"Sending: {custom_cmd.strip()}")
+                        ser.write(custom_cmd.encode())
+                    else:
+                        print("Empty command, not sending.")
+                
+                elif choice == '9':
+                    print("Quitting...")
+                    ser.write(b'S\r\n')  # Stop motors before exiting
+                    break
+                
+                else:
+                    print("Invalid choice!")
+                    continue
+                
+                # Read and print the response
+                print("\nArduino Response:")
+                start_time = time.time()
+                while (time.time() - start_time) < 1.0:
+                    if ser.in_waiting:
+                        try:
+                            line = ser.readline().decode('utf-8').strip()
+                            print(f"> {line}")
+                        except UnicodeDecodeError:
+                            print("> [Decode Error]")
+                    else:
+                        time.sleep(0.05)
+                        
+            except KeyboardInterrupt:
+                print("\nSending STOP command before exiting...")
+                ser.write(b'S\r\n')
+                break
+            
+            except Exception as e:
+                print(f"Error: {e}")
+        
+        # Don't close the serial connection if it's from the Arduino object
+        if not (hasattr(self, 'arduino') and hasattr(self.arduino, 'serial') and self.arduino.serial == ser):
+            ser.close()
+            print("Serial connection closed.")
 
 
 def parse_args():
@@ -236,7 +357,9 @@ def parse_args():
                         help=f'Motor speed (default: {DEFAULT_SPEED})')
     parser.add_argument('--test', '-t', choices=['all', 'left', 'right', 'back', 
                                                 'forward', 'backward', 'rotate', 'diagnostics'],
-                        default='all', help='Which test to run (default: all)')
+                        help='Which automated test to run (default: all)')
+    parser.add_argument('--interactive', '-i', action='store_true',
+                        help='Run in interactive mode for direct serial control')
     return parser.parse_args()
 
 
@@ -245,11 +368,18 @@ def main():
     args = parse_args()
     
     tester = MotorTester(args.port, args.baud)
+    
+    if args.interactive:
+        # For interactive mode, we'll initialize the connection inside the method
+        tester.interactive_mode()
+        return 0
+    
+    # For standard operation, we need to connect first
     if not tester.connect():
         return 1
     
     try:
-        if args.test == 'all':
+        if args.test == 'all' or args.test is None:
             tester.run_all_tests(args.duration, args.speed)
         elif args.test == 'left':
             tester.test_individual_motor('left', args.duration, args.speed)
@@ -269,9 +399,10 @@ def main():
         elif args.test == 'diagnostics':
             tester.test_diagnostics()
     finally:
-        # Always stop and disconnect
-        tester.arduino.send_stop()
-        tester.disconnect()
+        # Only stop and disconnect if we're in standard mode
+        if not args.interactive and hasattr(tester, 'arduino'):
+            tester.arduino.send_stop()
+            tester.disconnect()
     
     return 0
 
