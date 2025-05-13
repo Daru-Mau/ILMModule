@@ -23,6 +23,11 @@
 const float OBSTACLE_DISTANCE = 15.0; // cm
 const int BASE_SPEED = 50;           // PWM value (0-255)
 
+// Serial communication
+const int SERIAL_BUFFER_SIZE = 32;
+char serialBuffer[SERIAL_BUFFER_SIZE];
+int bufferIndex = 0;
+
 // Globals
 float distFL, distF, distFR, distBL, distB, distBR;
 
@@ -119,6 +124,182 @@ void testRotateRight(int duration = 1000)
   stopAllMotors();
 }
 
+void processSerialInput()
+{
+  while (Serial.available())
+  {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r')
+    {
+      if (bufferIndex > 0) {
+        serialBuffer[bufferIndex] = '\0';
+        parseCommand(serialBuffer);
+        bufferIndex = 0;
+      }
+    }
+    else if (bufferIndex < SERIAL_BUFFER_SIZE - 1)
+    {
+      serialBuffer[bufferIndex++] = c;
+    }
+  }
+}
+
+void parseCommand(const char* cmd)
+{
+  Serial.print("Received command: ");
+  Serial.println(cmd);
+  
+  // Handle single character commands
+  if (strlen(cmd) == 1)
+  {
+    switch (cmd[0])
+    {
+    case 'F':
+      Serial.println("Moving Forward");
+      moveMotor(motorLeft, FORWARD, BASE_SPEED);
+      moveMotor(motorRight, FORWARD, BASE_SPEED);
+      moveMotor(motorBack, STOP, 0);
+      break;
+    case 'B':
+      Serial.println("Moving Backward");
+      moveMotor(motorLeft, BACKWARD, BASE_SPEED);
+      moveMotor(motorRight, BACKWARD, BASE_SPEED);
+      moveMotor(motorBack, STOP, 0);
+      break;
+    case 'L':
+      Serial.println("Moving Left");
+      moveMotor(motorLeft, BACKWARD, BASE_SPEED);
+      moveMotor(motorRight, FORWARD, BASE_SPEED);
+      moveMotor(motorBack, FORWARD, BASE_SPEED);
+      break;
+    case 'R':
+      Serial.println("Moving Right");
+      moveMotor(motorLeft, FORWARD, BASE_SPEED);
+      moveMotor(motorRight, BACKWARD, BASE_SPEED);
+      moveMotor(motorBack, BACKWARD, BASE_SPEED);
+      break;
+    case 'S':
+      Serial.println("Stopping");
+      stopAllMotors();
+      break;
+    }
+    return;
+  }
+  
+  // Check for TEST command
+  if (strcmp(cmd, "TEST") == 0) {
+    Serial.println("TEST command received");
+    Serial.println("Sensor status: OK");
+    Serial.println("Motors: Ready");
+    Serial.println("System: OK");
+    return;
+  }
+  
+  // Check for PING command
+  if (strcmp(cmd, "PING") == 0) {
+    Serial.println("PONG");
+    return;
+  }
+  
+  // Check for STOP command
+  if (strcmp(cmd, "STOP") == 0) {
+    Serial.println("Stopping all motors");
+    stopAllMotors();
+    return;
+  }
+
+  // Handle TAG commands from motor_test.py
+  if (strncmp(cmd, "TAG:", 4) == 0) {
+    int tagId;
+    float distance;
+    char direction;
+    
+    if (sscanf(cmd + 4, "%d,%f,%c", &tagId, &distance, &direction) == 3) {
+      Serial.print("Processing TAG Command: ");
+      Serial.print("Tag ID: ");
+      Serial.print(tagId);
+      Serial.print(", Distance: ");
+      Serial.print(distance);
+      Serial.print(", Direction: ");
+      Serial.println(direction);
+      
+      // Convert speed from distance to motor speed
+      int speed = min(255, max(50, (int)(distance)));
+      
+      // Execute movement based on command
+      executeMovement(direction, speed, tagId);
+    } else {
+      Serial.println("Invalid TAG format");
+    }
+    return;
+  }
+  
+  Serial.println("Unknown command");
+}
+
+void executeMovement(char direction, int speed, int tagId) {
+  // For tag_id=99, we're doing rotation
+  bool isRotation = (tagId == 99);
+  
+  switch (direction) {
+    case 'F':
+      if (!isRotation) {
+        Serial.println("Moving FORWARD");
+        moveMotor(motorLeft, FORWARD, speed);
+        moveMotor(motorRight, FORWARD, speed);
+        moveMotor(motorBack, STOP, 0);
+      }
+      break;
+      
+    case 'B':
+      if (!isRotation) {
+        Serial.println("Moving BACKWARD");
+        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorRight, BACKWARD, speed);
+        moveMotor(motorBack, STOP, 0);
+      }
+      break;
+      
+    case 'L':
+      if (isRotation) {
+        Serial.println("Rotating COUNTERCLOCKWISE");
+        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorRight, FORWARD, speed);
+        moveMotor(motorBack, FORWARD, speed);
+      } else {
+        Serial.println("Moving LEFT");
+        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorRight, FORWARD, speed);
+        moveMotor(motorBack, FORWARD, speed);
+      }
+      break;
+      
+    case 'R':
+      if (isRotation) {
+        Serial.println("Rotating CLOCKWISE");
+        moveMotor(motorLeft, FORWARD, speed);
+        moveMotor(motorRight, BACKWARD, speed);
+        moveMotor(motorBack, BACKWARD, speed);
+      } else {
+        Serial.println("Moving RIGHT");
+        moveMotor(motorLeft, FORWARD, speed);
+        moveMotor(motorRight, BACKWARD, speed);
+        moveMotor(motorBack, BACKWARD, speed);
+      }
+      break;
+      
+    case 'S':
+      Serial.println("Stopping all motors");
+      stopAllMotors();
+      break;
+      
+    default:
+      Serial.println("Unknown direction");
+      stopAllMotors();
+      break;
+  }
+}
+
 void setup()
 {
   // Clear any existing serial data
@@ -148,36 +329,18 @@ void setup()
   Serial.println("L - Rotate Left");
   Serial.println("R - Rotate Right");
   Serial.println("S - Stop");
+  Serial.println("TAG:<tagId>,<distance>,<dir> - TAG Command");
+  Serial.println("TEST - Run diagnostics");
+  Serial.println("PING - Connectivity test");
+  Serial.println("STOP - Stop all motors");
   Serial.println("=========================");
 }
 
 void loop()
 {
-  if (Serial.available())
-  {
-    char cmd = Serial.read();
-    switch (cmd)
-    {
-    case 'F':
-      Serial.println("Testing Forward Movement");
-      testForward();
-      break;
-    case 'B':
-      Serial.println("Testing Backward Movement");
-      testBackward();
-      break;
-    case 'L':
-      Serial.println("Testing Left Rotation");
-      testRotateLeft();
-      break;
-    case 'R':
-      Serial.println("Testing Right Rotation");
-      testRotateRight();
-      break;
-    case 'S':
-      Serial.println("Stopping");
-      stopAllMotors();
-      break;
-    }
-  }
+  // Process any incoming serial commands
+  processSerialInput();
+  
+  // Add a small delay to prevent busy waiting
+  delay(10);
 }

@@ -18,9 +18,9 @@
 #define CONTROL_LOOP_INTERVAL 50  // 20Hz control loop
 #define POSITION_TOLERANCE 5.0f   // mm
 #define ROTATION_TOLERANCE 0.05f  // radians
-#define MAX_SPEED 50
-#define MIN_SPEED 40
-#define DEBUG_MODE true          // Set to true for verbose output, false for reduced output
+#define MAX_SPEED 80
+#define MIN_SPEED 30
+#define DEBUG_MODE false          // Set to false to reduce output
 
 // Optimized movement parameters
 const float PID_KP = 2.0f;
@@ -493,39 +493,6 @@ void setup() {
     Serial.println(F("April Tag tracking with obstacle avoidance"));
     Serial.println(F("Commands: TAG:id,distance,direction | TEST | STOP | PING"));
     Serial.println(F("=================================="));
-    
-    // Test motors with a quick pulse to confirm they're working
-    if (DEBUG_MODE) {
-        Serial.println(F("Testing motors..."));
-        testMotors();
-    }
-}
-
-// Quick motor test function
-void testMotors() {
-    // Very brief pulse on each motor to confirm connections
-    const int testSpeed = 40;  // Lower speed for safety
-    const int testDuration = 100;  // Very short duration (ms)
-    
-    // Test left motor
-    Serial.println(F("Testing left motor..."));
-    moveMotor(motorLeft, FORWARD, testSpeed);
-    delay(testDuration);
-    moveMotor(motorLeft, STOP, 0);
-    
-    // Test right motor
-    Serial.println(F("Testing right motor..."));
-    moveMotor(motorRight, FORWARD, testSpeed);
-    delay(testDuration);
-    moveMotor(motorRight, STOP, 0);
-    
-    // Test back motor
-    Serial.println(F("Testing back motor..."));
-    moveMotor(motorBack, FORWARD, testSpeed);
-    delay(testDuration);
-    moveMotor(motorBack, STOP, 0);
-    
-    Serial.println(F("Motor test complete."));
 }
 
 void loop() {
@@ -603,7 +570,7 @@ void parseCommand(const char* cmd) {
     }
     
     if (strncmp(cmd, "TAG:", 4) == 0) {
-        // Original format: TAG:x,y,yaw
+        // Primary format from apriltag_recognition: TAG:x,y,yaw
         float x = 0, y = 0, yaw = 0;
         if (sscanf(cmd + 4, "%f,%f,%f", &x, &y, &yaw) == 3) {
             tagController.updateTagData(x, y, yaw);
@@ -619,7 +586,7 @@ void parseCommand(const char* cmd) {
             // Convert direction character to x,y,yaw coordinates
             float x = 0, y = 0, yaw = 0;
             
-            // Set forward direction as +Y, with distance as magnitude
+            // Standard movement commands
             switch (direction) {
                 case 'F': // Forward
                     y = distance;
@@ -631,12 +598,10 @@ void parseCommand(const char* cmd) {
                     break;
                 case 'L': // Left
                     x = -distance;
-                    yaw = PI/2; // 90 degrees
                     if (DEBUG_MODE) Serial.println("Moving LEFT");
                     break;
                 case 'R': // Right
                     x = distance;
-                    yaw = -PI/2; // -90 degrees
                     if (DEBUG_MODE) Serial.println("Moving RIGHT");
                     break;
                 case 'S': // Stop
@@ -648,10 +613,38 @@ void parseCommand(const char* cmd) {
                     return; // Invalid direction
             }
             
+            // Special case for rotation commands
+            if (tagId == 99) {
+                // Rotation command (special case for CW/CCW)
+                if (direction == 'R') {
+                    // Clockwise rotation (CW)
+                    yaw = -distance / 50.0; // Scale appropriately
+                    x = 0;
+                    y = 0; 
+                    Serial.println("ACK: Clockwise rotation");
+                } else if (direction == 'L') {
+                    // Counter-clockwise rotation (CCW)
+                    yaw = distance / 50.0; // Scale appropriately
+                    x = 0;
+                    y = 0;
+                    Serial.println("ACK: Counter-clockwise rotation");
+                }
+            }
+            
             tagController.updateTagData(x, y, yaw);
             Serial.println("ACK: Tag command processed");
         } else {
             Serial.println("ERROR: Invalid TAG format");
+        }
+    } else if (strncmp(cmd, "POS:", 4) == 0) {
+        // Handle POS commands from apriltag_communication.py
+        float x = 0, y = 0, theta = 0;
+        if (sscanf(cmd + 4, "%f,%f,%f", &x, &y, &theta) == 3) {
+            // Update tag controller with position data
+            tagController.updateTagData(x, y, theta);
+            Serial.println("ACK: Position updated");
+        } else {
+            Serial.println("ERROR: Invalid POS format");
         }
     } else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "CLEAR") == 0) {
         // Stop robot and reset controller
@@ -676,7 +669,7 @@ void parseCommand(const char* cmd) {
         Serial.println(distBR);
         Serial.println("=== DIAGNOSTIC COMPLETE ===");
     } else if (strcmp(cmd, "PING") == 0) {
-        // Added to support the new ping method in apriltag_communication.py
+        // Support the ping method in apriltag_communication.py
         Serial.println("PONG");
     } else {
         // Unknown command
