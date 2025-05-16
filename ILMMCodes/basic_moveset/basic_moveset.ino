@@ -2,9 +2,21 @@
 #include <math.h>
 
 // === Pin Definitions ===
+// IMPORTANT: This file uses a COUNTER-CLOCKWISE pin arrangement
+// The motors have been repositioned as follows:
+// - OLD RIGHT wheel is now LEFT wheel (pins 2, 3, 38, 39)
+// - OLD LEFT wheel is now BACK wheel (pins 4, 5, 44, 45)
+// - OLD BACK wheel is now RIGHT wheel (pins 7, 6, 51, 50)
+// 
+// MOVEMENT CONTROLS:
+// F - Forward: LEFT=BACKWARD, RIGHT=FORWARD, BACK=FORWARD
+// B - Backward: LEFT=FORWARD, RIGHT=BACKWARD, BACK=BACKWARD
+// L - Left/CCW: LEFT=FORWARD, RIGHT=FORWARD, BACK=STOP
+// R - Right/CW: LEFT=BACKWARD, RIGHT=BACKWARD, BACK=STOP
+// Motor direction logic has been adapted to accommodate this arrangement
 
-// Motor Driver Pins
-#define RPWM_RIGHT 2// Updated to match configuration
+// Motor Driver Pins Normal (ORIGINAL CONFIGURATION - DO NOT USE)
+/* #define RPWM_RIGHT 2// Updated to match configuration
 #define LPWM_RIGHT 3 // Updated to match configuration
 #define REN_RIGHT 39 // Kept original
 #define LEN_RIGHT 38 // Kept original
@@ -17,7 +29,23 @@
 #define RPWM_BACK 7 // Updated to match configuration
 #define LPWM_BACK 6 // Updated to match configuration
 #define REN_BACK 51 // Kept original
-#define LEN_BACK 50 // Kept original
+#define LEN_BACK 50 // Kept original */
+
+// Motor Driver Pins
+#define RPWM_RIGHT 7// Updated to match configuration
+#define LPWM_RIGHT 6 // Updated to match configuration
+#define REN_RIGHT 51 // Kept original
+#define LEN_RIGHT 50 // Kept original
+
+#define RPWM_LEFT 2 // Updated to match configuration
+#define LPWM_LEFT 3 // Updated to match configuration
+#define REN_LEFT 38 // Updated to match configuration
+#define LEN_LEFT 39 // Updated to match configuration
+
+#define RPWM_BACK 4 // Updated to match configuration
+#define LPWM_BACK 5 // Updated to match configuration
+#define REN_BACK 44 // Kept original
+#define LEN_BACK 45 // Kept original
 
 // Basic configuration
 const float OBSTACLE_DISTANCE = 15.0; // cm
@@ -90,24 +118,6 @@ void stopAllMotors()
 // Simple movement commands for testing
 void testForward(int duration = 1000)
 {
-  moveMotor(motorLeft, FORWARD, BASE_SPEED);
-  moveMotor(motorRight, FORWARD, BASE_SPEED);
-  moveMotor(motorBack, STOP, 0);
-  delay(duration);
-  stopAllMotors();
-}
-
-void testBackward(int duration = 1000)
-{
-  moveMotor(motorLeft, BACKWARD, BASE_SPEED);
-  moveMotor(motorRight, BACKWARD, BASE_SPEED);
-  moveMotor(motorBack, STOP, 0);
-  delay(duration);
-  stopAllMotors();
-}
-
-void testRotateLeft(int duration = 1000)
-{
   moveMotor(motorLeft, BACKWARD, BASE_SPEED);
   moveMotor(motorRight, FORWARD, BASE_SPEED);
   moveMotor(motorBack, FORWARD, BASE_SPEED);
@@ -115,11 +125,29 @@ void testRotateLeft(int duration = 1000)
   stopAllMotors();
 }
 
-void testRotateRight(int duration = 1000)
+void testBackward(int duration = 1000)
 {
   moveMotor(motorLeft, FORWARD, BASE_SPEED);
   moveMotor(motorRight, BACKWARD, BASE_SPEED);
   moveMotor(motorBack, BACKWARD, BASE_SPEED);
+  delay(duration);
+  stopAllMotors();
+}
+
+void testRotateLeft(int duration = 1000)
+{
+  moveMotor(motorLeft, FORWARD, BASE_SPEED);
+  moveMotor(motorRight, FORWARD, BASE_SPEED);
+  moveMotor(motorBack, STOP, 0);
+  delay(duration);
+  stopAllMotors();
+}
+
+void testRotateRight(int duration = 1000)
+{
+  moveMotor(motorLeft, BACKWARD, BASE_SPEED);
+  moveMotor(motorRight, BACKWARD, BASE_SPEED);
+  moveMotor(motorBack, STOP, 0);
   delay(duration);
   stopAllMotors();
 }
@@ -156,27 +184,27 @@ void parseCommand(const char* cmd)
     {
     case 'F':
       Serial.println("Moving Forward");
-      moveMotor(motorLeft, FORWARD, BASE_SPEED);
-      moveMotor(motorRight, FORWARD, BASE_SPEED);
-      moveMotor(motorBack, STOP, 0);
-      break;
-    case 'B':
-      Serial.println("Moving Backward");
-      moveMotor(motorLeft, BACKWARD, BASE_SPEED);
-      moveMotor(motorRight, BACKWARD, BASE_SPEED);
-      moveMotor(motorBack, STOP, 0);
-      break;
-    case 'L':
-      Serial.println("Moving Left");
       moveMotor(motorLeft, BACKWARD, BASE_SPEED);
       moveMotor(motorRight, FORWARD, BASE_SPEED);
       moveMotor(motorBack, FORWARD, BASE_SPEED);
       break;
-    case 'R':
-      Serial.println("Moving Right");
+    case 'B':
+      Serial.println("Moving Backward");
       moveMotor(motorLeft, FORWARD, BASE_SPEED);
       moveMotor(motorRight, BACKWARD, BASE_SPEED);
       moveMotor(motorBack, BACKWARD, BASE_SPEED);
+      break;
+    case 'L':
+      Serial.println("Moving Left");
+      moveMotor(motorLeft, FORWARD, BASE_SPEED);
+      moveMotor(motorRight, FORWARD, BASE_SPEED);
+      moveMotor(motorBack, STOP, 0);
+      break;
+    case 'R':
+      Serial.println("Moving Right");
+      moveMotor(motorLeft, BACKWARD, BASE_SPEED);
+      moveMotor(motorRight, BACKWARD, BASE_SPEED);
+      moveMotor(motorBack, STOP, 0);
       break;
     case 'S':
       Serial.println("Stopping");
@@ -245,46 +273,46 @@ void executeMovement(char direction, int speed, int tagId) {
     case 'F':
       if (!isRotation) {
         Serial.println("Moving FORWARD");
-        moveMotor(motorLeft, FORWARD, speed);
+        moveMotor(motorLeft, BACKWARD, speed);
         moveMotor(motorRight, FORWARD, speed);
-        moveMotor(motorBack, STOP, 0);
+        moveMotor(motorBack, FORWARD, speed);
       }
       break;
       
     case 'B':
       if (!isRotation) {
         Serial.println("Moving BACKWARD");
-        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorLeft, FORWARD, speed);
         moveMotor(motorRight, BACKWARD, speed);
-        moveMotor(motorBack, STOP, 0);
+        moveMotor(motorBack, BACKWARD, speed);
       }
       break;
       
     case 'L':
       if (isRotation) {
         Serial.println("Rotating COUNTERCLOCKWISE");
-        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorLeft, FORWARD, speed);
         moveMotor(motorRight, FORWARD, speed);
-        moveMotor(motorBack, FORWARD, speed);
+        moveMotor(motorBack, STOP, 0);
       } else {
         Serial.println("Moving LEFT");
-        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorLeft, FORWARD, speed);
         moveMotor(motorRight, FORWARD, speed);
-        moveMotor(motorBack, FORWARD, speed);
+        moveMotor(motorBack, STOP, 0);
       }
       break;
       
     case 'R':
       if (isRotation) {
         Serial.println("Rotating CLOCKWISE");
-        moveMotor(motorLeft, FORWARD, speed);
+        moveMotor(motorLeft, BACKWARD, speed);
         moveMotor(motorRight, BACKWARD, speed);
-        moveMotor(motorBack, BACKWARD, speed);
+        moveMotor(motorBack, STOP, 0);
       } else {
         Serial.println("Moving RIGHT");
-        moveMotor(motorLeft, FORWARD, speed);
+        moveMotor(motorLeft, BACKWARD, speed);
         moveMotor(motorRight, BACKWARD, speed);
-        moveMotor(motorBack, BACKWARD, speed);
+        moveMotor(motorBack, STOP, 0);
       }
       break;
       

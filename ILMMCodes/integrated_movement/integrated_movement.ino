@@ -49,9 +49,9 @@ const float ACCEL_RATE = 0.15f;  // Speed change per cycle (0-1)
 #define RPWM_RIGHT 6 
 #define LPWM_RIGHT 7 
 #define REN_RIGHT 51
-#define LEN_RIGHT 51
+#define LEN_RIGHT 50
 #define RPWM_LEFT 3 
-#define LPWM_LEFT 2   
+#define LPWM_LEFT 2     
 #define REN_LEFT 39
 #define LEN_LEFT 38
 #define RPWM_BACK 5
