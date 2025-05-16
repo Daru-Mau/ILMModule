@@ -7,9 +7,9 @@ import cv2
 import time
 import os
 import numpy as np
-import serial
-import signal
 import sys
+import signal
+import serial
 from threading import Event
 
 # Check if running on Raspberry Pi
@@ -18,41 +18,34 @@ IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
 if IS_RASPBERRY_PI:
     from picamera2 import Picamera2
     from pupil_apriltags import Detector
-    from apriltag_communication import ArduinoCommunicator, TagData
+    from raspy_communication import ArduinoCommunicator, TagData
 
 # === Configuration ===
 # Camera settings
-CAMERA_WIDTH = 1640       # Higher resolution for better long-distance detection
-CAMERA_HEIGHT = 1232      # Native 4:3 resolution for v2 camera
-FOCAL_LENGTH_PX = 1000    # Camera focal length in pixels
-TAG_SIZE_MM = 150         # Physical tag size in mm
-TAG_SIZE_CM = TAG_SIZE_MM / 10  # Convert to cm for existing code compatibility
+CAMERA_WIDTH = 1640
+CAMERA_HEIGHT = 1232
+FOCAL_LENGTH_PX = 1000
+TAG_SIZE_MM = 150
+TAG_SIZE_CM = TAG_SIZE_MM / 10
 
-# Camera intrinsic parameters (for improved distance calculation)
-# These parameters should be calibrated for your specific camera
-CAM_FX = 1000.0  # Focal length in x direction (pixels)
-CAM_FY = 1000.0  # Focal length in y direction (pixels)
-CAM_CX = CAMERA_WIDTH / 2  # Principal point x-coordinate
-CAM_CY = CAMERA_HEIGHT / 2  # Principal point y-coordinate
+# Camera intrinsic parameters
+CAM_FX = 1000.0
+CAM_FY = 1000.0
+CAM_CX = CAMERA_WIDTH / 2
+CAM_CY = CAMERA_HEIGHT / 2
 
 # Arduino communication
-ARDUINO_ENABLED = True    # Enable Arduino communication
-SERIAL_PORT = '/dev/ttyACM1'  # Updated from /dev/ttyACM0 to match connected port
+ARDUINO_ENABLED = True
+SERIAL_PORT = '/dev/ttyACM0'
 BAUD_RATE = 115200
 
 # Detection settings
-VERBOSE = True            # Set to False to reduce console output
-DETECTION_INTERVAL = 0.1  # 10 FPS for more reliable processing
+VERBOSE = False
+DETECTION_INTERVAL = 0.1
 
 # Navigation parameters
-CENTER_TOLERANCE = 0.15   # Percentage of frame width for center tolerance
-DISTANCE_THRESHOLD = 30   # Distance (cm) threshold for movement decisions
-
-# Debug settings - ADDED FOR TROUBLESHOOTING
-DEBUG_MODE = True         # Enable additional debug messages
-SAVE_DEBUG_FRAMES = False  # Save processed frames for debugging
-DEBUG_FRAME_INTERVAL = 5.0 # Save a debug frame every 5 seconds
-last_debug_frame_time = 0
+CENTER_TOLERANCE = 0.15
+DISTANCE_THRESHOLD = 30
 
 # === Global state ===
 shutdown_event = Event()
@@ -70,48 +63,36 @@ def setup_camera():
         config = picam.create_preview_configuration(
             main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "BGR888"},
             controls={
-                "FrameRate": 15,          # Lower framerate for more stable images
-                "AwbEnable": True,        # Auto white balance
-                "ExposureTime": 8000,     # 8ms exposure for clearer edges
-                "AnalogueGain": 4.0,      # Increased gain for better visibility at distance
-                "Sharpness": 15.0,        # Maximum sharpness for clearest tag edges
-                "Contrast": 2.0,          # Higher contrast for better black/white distinction
-                "Brightness": 0.0,        # Neutral brightness to prevent washout
-                "NoiseReductionMode": 0,  # Disable noise reduction to preserve edges
-                "AwbMode": 1              # Auto white balance mode (1 = normal)
-                # Removed unsupported parameters
+                "FrameRate": 15,
+                "AwbEnable": True,
+                "ExposureTime": 8000,
+                "AnalogueGain": 4.0,
+                "Sharpness": 15.0,
+                "Contrast": 2.0,
+                "Brightness": 0.0,
+                "NoiseReductionMode": 0,
+                "AwbMode": 1
             }
         )
         
-        # Use IPA (Image Processing Algorithms) file for advanced tuning
-        # This loads the IMX219.json tuning parameters automatically
-        picam.set_controls({"NoiseReductionMode": 0})  # Explicitly disable noise reduction for tag edges
-        
+        picam.set_controls({"NoiseReductionMode": 0})
         picam.configure(config)
         picam.start()
+        time.sleep(0.5)
         
-        # Allow the camera to adjust to the scene
-        time.sleep(0.5)  # Short delay for camera initialization
-        
-        # Fine-tune the exposure parameters - removed unsupported parameters
         try:
             picam.set_controls({
-                "FrameDurationLimits": (33333, 66666)  # Set min/max frame duration based on imx219.json
+                "FrameDurationLimits": (33333, 66666)
             })
-        except Exception as e:
-            if DEBUG_MODE:
-                print(f"INFO: Could not set FrameDurationLimits: {e}")
+        except Exception:
+            pass  # Ignore if not supported
         
-        # ADDED: Print confirmation of camera initialization
-        if DEBUG_MODE:
-            print(f"Camera initialized with resolution {CAMERA_WIDTH}x{CAMERA_HEIGHT}")
-            print(f"Camera controls: {picam.camera_controls}")
+        print(f"Camera initialized with resolution {CAMERA_WIDTH}x{CAMERA_HEIGHT}")
         
         return picam
         
     except Exception as e:
         print(f"Camera setup failed: {e}")
-        # Try to clean up any camera resources
         try:
             import subprocess
             subprocess.run(['sudo', 'pkill', '-f', 'libcamera'], stderr=subprocess.DEVNULL)
@@ -125,87 +106,103 @@ def setup_serial():
         return None
     
     try:
+        print("Attempting to connect to Arduino...")
+        
+        # First try with our regular communicator
         communicator = ArduinoCommunicator(SERIAL_PORT, BAUD_RATE)
         if communicator.connect():
             print("Arduino connected successfully")
-            # ADDED: Send test command to confirm communication
-            if DEBUG_MODE:
-                time.sleep(0.5)  # Give Arduino time to initialize
-                if communicator.send_test_command():
-                    print("Arduino communication verified - TEST command successful")
-                else:
-                    print("WARNING: Arduino test command failed. Check Arduino response.")
             return communicator
-        else:
-            print("Failed to connect to Arduino")
+        
+        # If connection failed, try a direct serial connection as fallback
+        print("Standard connection failed. Trying direct serial connection...")
+        try:
+            # Create a simple wrapper around direct serial connection that mimics ArduinoCommunicator
+            class DirectSerialCommunicator:
+                def __init__(self, port, baud_rate):
+                    self.serial = serial.Serial(port, baud_rate, timeout=1)
+                    time.sleep(2)  # Give Arduino time to reset
+                    self.serial.reset_input_buffer()
+                    self.connected = True
+                    print(f"Direct serial connection established to {port}")
+                
+                def send_tag_data(self, tag_data):
+                    if not self.serial or not self.serial.is_open:
+                        return False
+                    cmd = f"TAG:{tag_data.tag_id},{tag_data.distance},{tag_data.direction}\r\n"
+                    print(f"Sending direct serial: {cmd.strip()}")
+                    self.serial.write(cmd.encode())
+                    return True
+                
+                def send_stop(self):
+                    if not self.serial or not self.serial.is_open:
+                        return False
+                    self.serial.write(b'STOP\r\n')
+                    return True
+                
+                def set_speed(self, max_speed, min_speed):
+                    if not self.serial or not self.serial.is_open:
+                        return False
+                    cmd = f"SPEED:{max_speed},{min_speed}\r\n"
+                    self.serial.write(cmd.encode())
+                    return True
+                
+                def disconnect(self):
+                    if self.serial and self.serial.is_open:
+                        self.serial.write(b'STOP\r\n')
+                        time.sleep(0.1)
+                        self.serial.close()
+                        print("Serial connection closed")
+            
+            direct_comm = DirectSerialCommunicator(SERIAL_PORT, BAUD_RATE)
+            print("Using direct serial connection mode - commands will be sent directly")
+            return direct_comm
+            
+        except Exception as e:
+            print(f"Direct serial connection also failed: {e}")
             return None
+        
     except Exception as e:
         print(f"Failed to connect to Arduino: {e}")
         return None
 
 def estimate_tag_size(corners):
-    """Calculate tag size in pixels based on corner positions with robust metrics.
-    
-    Args:
-        corners: List of four corner points of the AprilTag
-        
-    Returns:
-        Average side length of the tag in pixels
-    """
+    """Calculate tag size in pixels based on corner positions with robust metrics"""
     # Calculate all side lengths
     side_lengths = []
     for i in range(4):
-        # Calculate Euclidean distance between consecutive corners
         side = np.linalg.norm(corners[i] - corners[(i+1) % 4])
         side_lengths.append(side)
     
-    # Calculate diagonal lengths for additional robustness
+    # Calculate diagonal lengths
     diagonal1 = np.linalg.norm(corners[0] - corners[2])
     diagonal2 = np.linalg.norm(corners[1] - corners[3])
     
-    # Verify if the shape is roughly square (for quality control)
+    # Verify if the shape is roughly square
     sides_std = np.std(side_lengths)
     sides_mean = np.mean(side_lengths)
     diag_ratio = max(diagonal1, diagonal2) / min(diagonal1, diagonal2)
     
-    # If the tag shape is highly distorted, apply corrections
+    # Handle distorted tags
     if sides_std / sides_mean > 0.2 or diag_ratio > 1.3:
-        # For distorted tags, prefer the median of sides and use diagonals for verification
-        # Sqrt of 2 is diagonal to side ratio in a perfect square
         estimated_side = np.median(side_lengths)
         estimated_side_from_diag = (diagonal1 + diagonal2) / (2 * np.sqrt(2))
-        
-        # Weighted average giving more importance to sides for slightly distorted tags
         return 0.7 * estimated_side + 0.3 * estimated_side_from_diag
     else:
-        # For clean detections, just use the average side length
         return sides_mean
 
 def calculate_distance(tag_size_px):
-    """Calculate distance to AprilTag using a more accurate camera model.
-    
-    This function uses the known physical size of the tag (150mm) and the
-    detected size in pixels to calculate distance using the pinhole camera model.
-    
-    Args:
-        tag_size_px: Estimated tag size in pixels
-        
-    Returns:
-        Distance to tag in centimeters
-    """
-    # Distance calculation using the pinhole camera model:
-    # distance = (focal_length * real_size) / pixel_size
+    """Calculate distance to AprilTag using a more accurate camera model"""
     distance_mm = (CAM_FX * TAG_SIZE_MM) / tag_size_px
-    distance_cm = distance_mm / 10.0  # Convert mm to cm
+    distance_cm = distance_mm / 10.0
     
-    # Apply a small correction for lens distortion effects
-    # These values should be calibrated based on actual measurements
+    # Apply calibration correction
     if distance_cm < 50:
-        return distance_cm * 1.05  # Closer objects tend to appear slightly further than they are
+        return distance_cm * 1.05
     elif distance_cm < 150:
-        return distance_cm * 1.02  # Mid-range slight correction
+        return distance_cm * 1.02
     else:
-        return distance_cm * 0.98  # Far objects tend to appear slightly closer than they are
+        return distance_cm * 0.98
 
 def get_direction(detection, frame_width):
     """Determine movement direction based on tag position and size"""
@@ -233,17 +230,17 @@ def preprocess_image(frame):
     # Convert to grayscale
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     
-    # Apply advanced adaptive histogram equalization with higher clip limit
+    # Apply advanced adaptive histogram equalization
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(6,6))
     gray = clahe.apply(gray)
     
-    # Apply bilateral filter to preserve edges while reducing noise
+    # Apply bilateral filter
     gray = cv2.bilateralFilter(gray, 5, 75, 75)
     
-    # Enhance contrast with wider range
+    # Enhance contrast
     gray = cv2.convertScaleAbs(gray, alpha=1.5, beta=15)
     
-    # Apply sharper edge enhancement
+    # Apply edge enhancement
     kernel = np.array([[-1,-1,-1], [-1,9.5,-1], [-1,-1,-1]])
     gray = cv2.filter2D(gray, -1, kernel)
     
@@ -256,8 +253,9 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def main():
-    # Parse command line arguments for speed settings
+    # Parse command line arguments
     import argparse
+    global SERIAL_PORT
     parser = argparse.ArgumentParser(description='AprilTag Detection and Robot Control')
     parser.add_argument('--max-speed', type=int, default=150,
                         help='Maximum motor speed (50-255)')
@@ -265,11 +263,14 @@ def main():
                         help='Minimum motor speed (30-max_speed)')
     parser.add_argument('--port', type=str, default=SERIAL_PORT,
                         help=f'Serial port (default: {SERIAL_PORT})')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Enable verbose output')
     args = parser.parse_args()
     
-    # Update serial port from arguments
-    global SERIAL_PORT
     SERIAL_PORT = args.port
+    if args.verbose:
+        global VERBOSE
+        VERBOSE = True
     
     # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -286,11 +287,7 @@ def main():
     # Set motor speed parameters if Arduino connection successful
     if arduino:
         print(f"Setting motor speeds - MAX: {args.max_speed}, MIN: {args.min_speed}")
-        if arduino.set_speed(args.max_speed, args.min_speed):
-            print("Motor speed parameters successfully updated")
-    
-    if arduino is None and ARDUINO_ENABLED:
-        print("Arduino connection failed, continuing in command display mode")
+        arduino.set_speed(args.max_speed, args.min_speed)
     
     if not camera:
         print("Failed to initialize camera. Exiting.")
@@ -298,15 +295,14 @@ def main():
     
     print("Setting up AprilTag detector...")
     
-    # Initialize AprilTag detector with optimal settings for maximum range
-    # Using only parameters supported by the installed version of pupil_apriltags
+    # Initialize AprilTag detector
     detector = Detector(
         families="tag36h11",
-        nthreads=4,           # Use all cores on Pi 4
-        quad_decimate=1.0,    # No decimation for maximum range
-        quad_sigma=0.6,       # Slightly higher blur for better detection at distance
+        nthreads=4,
+        quad_decimate=1.0,
+        quad_sigma=0.6,
         refine_edges=True,
-        decode_sharpening=0.7,# Increased sharpening for cleaner tag reading
+        decode_sharpening=0.7,
         debug=False
     )
     
@@ -314,87 +310,53 @@ def main():
     last_commands = []
     MAX_HISTORY = 3
     
-    # Detection enhancement variables
-    detection_confidence_threshold = 0.5  # Min confidence to accept a detection
-    tag_history = {}  # Track recent tag positions for prediction
+    # Detection parameters
+    detection_confidence_threshold = 0.5
+    tag_history = {}
     
     # Timing variables
     last_command_time = 0
-    command_interval = 0.1  # 100ms between commands
+    command_interval = 0.1
     last_frame_time = 0
-    frame_count = 0  # ADDED: Count frames for debugging
-    last_status_time = 0  # ADDED: For periodic status updates
+    frame_count = 0
     
     print("AprilTag detection system running...")
-    # ADDED: Print initial configuration
-    print(f"Tag family: tag36h11, Confidence threshold: {detection_confidence_threshold}")
-    print(f"Arduino enabled: {ARDUINO_ENABLED}, Port: {SERIAL_PORT}")
     
     try:
         while not shutdown_event.is_set():
             current_time = time.time()
             
-            # ADDED: Print periodic status updates
-            if DEBUG_MODE and current_time - last_status_time > 5:
-                print(f"System running. Processed {frame_count} frames. Waiting for AprilTags...")
-                last_status_time = current_time
-                
-                # Send a test ping to Arduino periodically
-                if arduino and current_time - last_status_time > 10:
-                    if not arduino.ping():
-                        print("WARNING: Arduino not responding to ping")
-            
-            # Limit frame rate to avoid overwhelming the CPU
+            # Limit frame rate
             if current_time - last_frame_time < DETECTION_INTERVAL:
-                time.sleep(0.001)  # Short sleep to prevent CPU hogging
+                time.sleep(0.001)
                 continue
                 
             last_frame_time = current_time
-            frame_count += 1  # ADDED: Increment frame count
+            frame_count += 1
             
             # Capture frame
             try:
                 frame = camera.capture_array("main")
                 if frame is None:
-                    print("Error: Empty frame captured")
                     time.sleep(0.1)
                     continue
             except Exception as e:
-                print(f"Camera capture error: {e}")
+                print(f"Camera error: {e}")
                 time.sleep(0.1)
                 continue
             
-            # ADDED: Save debug frame periodically
-            if SAVE_DEBUG_FRAMES and current_time - last_debug_frame_time > DEBUG_FRAME_INTERVAL:
-                try:
-                    os.makedirs("debug_frames", exist_ok=True)
-                    cv2.imwrite(f"debug_frames/frame_{int(current_time)}.jpg", frame)
-                    last_debug_frame_time = current_time
-                    print(f"Saved debug frame: debug_frames/frame_{int(current_time)}.jpg")
-                except Exception as e:
-                    print(f"Error saving debug frame: {e}")
-            
-            # Try multiple preprocessing techniques for challenging conditions
+            # Process image and detect AprilTags
             processed = preprocess_image(frame)
-            
-            # Detect AprilTags with the primary processing
             detections = detector.detect(processed)
-            
-            # ADDED: Debug detection attempts
-            if DEBUG_MODE and (frame_count % 30 == 0):  # Every ~3 seconds (at 10 FPS)
-                print(f"Detection attempt: {len(detections)} tags found")
-                if not detections:
-                    print("No tags found in frame. Check lighting and tag visibility.")
             
             # If no detections with primary method, try alternative processing
             if not detections:
-                # Alternative processing for different lighting conditions
-                # 1. Higher contrast for low light
+                # Try higher contrast for low light
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 alt_processed = cv2.convertScaleAbs(gray, alpha=2.0, beta=30)
                 detections = detector.detect(alt_processed)
                 
-                # 2. If still no detections, try adaptive thresholding
+                # If still no detections, try adaptive thresholding
                 if not detections:
                     adaptive_thresh = cv2.adaptiveThreshold(
                         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
@@ -406,12 +368,12 @@ def main():
             if detections:
                 detections = [d for d in detections if d.decision_margin > detection_confidence_threshold]
                 
-            # Process each detected tag
+            # Process detected tags
             if detections:
-                # Find the tag closest to the center of the frame (most likely the target)
+                # Find the tag closest to the center
                 main_tag = min(detections, key=lambda d: abs(d.center[0] - frame.shape[1]/2))
                 
-                # Update tag history for this tag ID
+                # Update tag history
                 if main_tag.tag_id not in tag_history:
                     tag_history[main_tag.tag_id] = []
                 
@@ -422,7 +384,7 @@ def main():
                     'corners': main_tag.corners
                 })
                 
-                # Keep only recent history (last 1 second)
+                # Keep only recent history
                 tag_history[main_tag.tag_id] = [
                     d for d in tag_history[main_tag.tag_id] 
                     if current_time - d['time'] < 1.0
@@ -441,25 +403,26 @@ def main():
                     from collections import Counter
                     direction = Counter(last_commands).most_common(1)[0][0]
                 
-                # ADDED: Print tag detection info with more details
-                print(f"*** TAG DETECTED: ID={main_tag.tag_id}, Pos=({main_tag.center[0]:.1f}, {main_tag.center[1]:.1f}), Dir={direction}, Dist={distance_cm:.1f}cm ***")
+                if VERBOSE:
+                    print(f"Tag {main_tag.tag_id} at {distance_cm:.1f}cm -> {direction}")
                 
                 # Send command to Arduino at specified intervals
-                current_time = time.time()
                 if arduino and current_time - last_command_time >= command_interval:
+                    # Scale up the distance to be used as motor speed - needs to be at least 150-200 for motors to move
+                    motor_speed = max(200, int(distance_cm * 3))  # Scale distance by 3x with minimum of 200
+                    
                     tag_data = TagData(
-                        tag_id=main_tag.tag_id, 
-                        distance=distance_cm, 
+                        tag_id=main_tag.tag_id,
+                        distance=motor_speed,  # Use scaled value for motor speed
                         direction=direction
                     )
-                    success = arduino.send_tag_data(tag_data)
-                    # ADDED: Debug for arduino communication
-                    if DEBUG_MODE:
-                        cmd_str = f"TAG:{main_tag.tag_id},{distance_cm:.1f},{direction}"
-                        print(f"→ Sent to Arduino: {cmd_str} - {'Success' if success else 'FAILED'}")
+                    
+                    if VERBOSE:
+                        print(f"Sending command: Tag {main_tag.tag_id}, Speed {motor_speed}, Direction {direction}")
+                        
+                    arduino.send_tag_data(tag_data)
                     last_command_time = current_time
-                elif arduino is None and current_time - last_command_time >= command_interval:
-                    # Display command indications when Arduino is not connected
+                elif arduino is None and VERBOSE and current_time - last_command_time >= command_interval:
                     command_text = {
                         'F': "FORWARD",
                         'B': "BACKWARD",
@@ -470,26 +433,16 @@ def main():
                     
                     print(f"COMMAND: {command_text} | Tag {main_tag.tag_id} | Distance: {distance_cm:.1f}cm")
                     last_command_time = current_time
-                
-                # Print detection information with enhanced details
-                if VERBOSE:
-                    print(f"Tag {main_tag.tag_id} | Dist: {distance_cm:.1f}cm | Dir: {direction} | " 
-                          f"Conf: {main_tag.decision_margin:.3f} | "
-                          f"Size: {estimate_tag_size(main_tag.corners):.1f}px")
                     
             else:
                 # No tags detected
                 last_commands = []  # Clear command history
                 
                 # Send stop command when no tags are visible
-                current_time = time.time()
                 if arduino and current_time - last_command_time >= command_interval:
-                    success = arduino.send_stop()
-                    # ADDED: Debug for stop command
-                    if DEBUG_MODE and (frame_count % 10 == 0):  # Limit frequency of these messages
-                        print(f"→ Sent to Arduino: STOP - {'Success' if success else 'FAILED'}")
+                    arduino.send_stop()
                     last_command_time = current_time
-                elif arduino is None and current_time - last_command_time >= command_interval:
+                elif arduino is None and VERBOSE and current_time - last_command_time >= command_interval:
                     # Display stop command when no tags are detected and Arduino is not connected
                     if frame_count % 10 == 0:  # Limit frequency of these messages
                         print("COMMAND: STOP | No tags detected")
@@ -498,11 +451,10 @@ def main():
             # Brief pause to reduce CPU load
             time.sleep(0.001)
             
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
     except Exception as e:
         print(f"Unexpected error: {e}")
-        # ADDED: More detailed exception info
-        import traceback
-        traceback.print_exc()
     finally:
         # Clean shutdown
         shutdown_event.set()
@@ -515,6 +467,7 @@ def main():
                 pass
                 
         if arduino:
+            arduino.send_stop()
             arduino.disconnect()
             print("Serial connection closed")
         

@@ -22,7 +22,7 @@ from typing import Optional
 
 # Import the Arduino communication class from existing module
 try:
-    from apriltag_communication import ArduinoCommunicator, TagData
+    from communication_test import ArduinoCommunicator, TagData
 except ImportError:
     print("Error: apriltag_communication.py module not found.")
     print("Make sure this script is in the same directory as apriltag_communication.py")

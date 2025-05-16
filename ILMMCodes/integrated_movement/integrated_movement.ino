@@ -18,8 +18,9 @@
 #define CONTROL_LOOP_INTERVAL 50  // 20Hz control loop
 #define POSITION_TOLERANCE 5.0f   // mm
 #define ROTATION_TOLERANCE 0.05f  // radians
-#define MAX_SPEED 150  // Increased from 50 to overcome motor stall torque
-#define MIN_SPEED 100  // Increased from 40 for more noticeable movement
+// Changed from #define to global variables so they can be modified at runtime
+int MAX_SPEED = 150;  // Increased from 50 to overcome motor stall torque
+int MIN_SPEED = 100;  // Increased from 40 for more noticeable movement
 #define DEBUG_MODE true          // Set to true for verbose output, false for reduced output
 
 // Optimized movement parameters
@@ -30,19 +31,33 @@ const float ACCEL_RATE = 0.15f;  // Speed change per cycle (0-1)
 
 // === Pin Definitions === (Combined from both sketches)
 
-// Motor Driver Pins
-#define RPWM_RIGHT 3
-#define LPWM_RIGHT 2
+/* // Motor Driver Pins
+#define RPWM_RIGHT 2  // FIXED: Swapped to match basic_moveset.ino
+#define LPWM_RIGHT 3  // FIXED: Swapped to match basic_moveset.ino
 #define REN_RIGHT 39
 #define LEN_RIGHT 38
-#define RPWM_LEFT 4
-#define LPWM_LEFT 5
+#define RPWM_LEFT 5   // FIXED: Swapped to match basic_moveset.ino
+#define LPWM_LEFT 4   // FIXED: Swapped to match basic_moveset.ino
 #define REN_LEFT 44
 #define LEN_LEFT 45
 #define RPWM_BACK 7
 #define LPWM_BACK 6
 #define REN_BACK 51
-#define LEN_BACK 50
+#define LEN_BACK 50 */
+
+// Motor Driver Pins CWW
+#define RPWM_RIGHT 6 
+#define LPWM_RIGHT 7 
+#define REN_RIGHT 51
+#define LEN_RIGHT 51
+#define RPWM_LEFT 3 
+#define LPWM_LEFT 2   
+#define REN_LEFT 39
+#define LEN_LEFT 38
+#define RPWM_BACK 5
+#define LPWM_BACK 4
+#define REN_BACK 44
+#define LEN_BACK 45
 
 // Encoder Pins
 #define ENC_RIGHT_C1 40
@@ -581,17 +596,21 @@ void loop() {
 }
 
 void processSerialInput() {
-    static char buffer[32];
+    static char buffer[64];  // Increased buffer size
     static uint8_t index = 0;
     
-    char c = Serial.read();
-    
-    if (c == '\n') {
-        buffer[index] = '\0';
-        parseCommand(buffer);
-        index = 0;
-    } else if (index < sizeof(buffer) - 1) {
-        buffer[index++] = c;
+    while (Serial.available()) {
+        char c = Serial.read();
+        
+        if (c == '\n' || c == '\r') {
+            if (index > 0) {  // Only process non-empty commands
+                buffer[index] = '\0';
+                parseCommand(buffer);
+                index = 0;
+            }
+        } else if (index < sizeof(buffer) - 1) {
+            buffer[index++] = c;
+        }
     }
 }
 
@@ -602,60 +621,61 @@ void parseCommand(const char* cmd) {
         Serial.println(cmd);
     }
     
-    if (strncmp(cmd, "TAG:", 4) == 0) {
-        // Original format: TAG:x,y,yaw
-        float x = 0, y = 0, yaw = 0;
-        if (sscanf(cmd + 4, "%f,%f,%f", &x, &y, &yaw) == 3) {
-            tagController.updateTagData(x, y, yaw);
-            Serial.println("ACK: Tag position updated");
-            return;
-        }
+    // Check for TEST command
+    if (strcmp(cmd, "TEST") == 0) {
+        Serial.println("=== RUNNING DIAGNOSTICS ===");
+        updateDistances();
+        Serial.print("Distances (cm) - FL: ");
+        Serial.print(distFL);
+        Serial.print(" F: ");
+        Serial.print(distF);
+        Serial.print(" FR: ");
+        Serial.print(distFR);
+        Serial.print(" BL: ");
+        Serial.print(distBL);
+        Serial.print(" B: ");
+        Serial.print(distB);
+        Serial.print(" BR: ");
+        Serial.println(distBR);
         
-        // Alternative format from apriltag_communication.py: TAG:tag_id,distance,direction
-        int tagId;
-        float distance;
-        char direction;
-        if (sscanf(cmd + 4, "%d,%f,%c", &tagId, &distance, &direction) == 3) {
-            // Convert direction character to x,y,yaw coordinates
-            float x = 0, y = 0, yaw = 0;
-            
-            // Set forward direction as +Y, with distance as magnitude
-            switch (direction) {
-                case 'F': // Forward
-                    y = distance;
-                    if (DEBUG_MODE) Serial.println("Moving FORWARD");
-                    break;
-                case 'B': // Backward
-                    y = -distance;
-                    if (DEBUG_MODE) Serial.println("Moving BACKWARD");
-                    break;
-                case 'L': // Left
-                    x = -distance;
-                    yaw = PI/2; // 90 degrees
-                    if (DEBUG_MODE) Serial.println("Moving LEFT");
-                    break;
-                case 'R': // Right
-                    x = distance;
-                    yaw = -PI/2; // -90 degrees
-                    if (DEBUG_MODE) Serial.println("Moving RIGHT");
-                    break;
-                case 'S': // Stop
-                    // All zeros, no movement
-                    if (DEBUG_MODE) Serial.println("STOP command");
-                    break;
-                default:
-                    Serial.println("ERROR: Invalid direction");
-                    return; // Invalid direction
-            }
-            
-            tagController.updateTagData(x, y, yaw);
-            Serial.println("ACK: Tag command processed");
-        } else {
-            Serial.println("ERROR: Invalid TAG format");
-        }
-    } else if (strncmp(cmd, "SPEED:", 6) == 0) {
-        // New command format: SPEED:max_speed,min_speed
-        // Allows Python script to set speed parameters dynamically
+        // Test motors with quick pulses
+        Serial.println("Testing LEFT motor...");
+        moveMotor(motorLeft, FORWARD, 150);
+        delay(100);
+        moveMotor(motorLeft, STOP, 0);
+        
+        Serial.println("Testing RIGHT motor...");
+        moveMotor(motorRight, FORWARD, 150);
+        delay(100);
+        moveMotor(motorRight, STOP, 0);
+        
+        Serial.println("Testing BACK motor...");
+        moveMotor(motorBack, FORWARD, 150);
+        delay(100);
+        moveMotor(motorBack, STOP, 0);
+        
+        Serial.println("=== DIAGNOSTIC COMPLETE ===");
+        return;
+    }
+    
+    // Check for PING command
+    if (strcmp(cmd, "PING") == 0) {
+        Serial.println("PONG");
+        return;
+    }
+    
+    // Check for STOP/CLEAR commands
+    if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "CLEAR") == 0) {
+        // Stop robot and reset controller
+        tagController.reset();
+        stopAllMotors();
+        Serial.println("ACK: Stopped and reset");
+        return;
+    }
+    
+    // Handle SPEED command
+    if (strncmp(cmd, "SPEED:", 6) == 0) {
+        // Command format: SPEED:max_speed,min_speed
         int newMaxSpeed, newMinSpeed;
         if (sscanf(cmd + 6, "%d,%d", &newMaxSpeed, &newMinSpeed) == 2) {
             // Apply constraints to ensure valid values
@@ -673,34 +693,130 @@ void parseCommand(const char* cmd) {
         } else {
             Serial.println("ERROR: Invalid SPEED format. Use SPEED:max_speed,min_speed");
         }
-    } else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "CLEAR") == 0) {
-        // Stop robot and reset controller
-        tagController.reset();
-        stopAllMotors();
-        Serial.println("ACK: Stopped and reset");
-    } else if (strncmp(cmd, "TEST", 4) == 0) {
-        // Run sensor tests
-        Serial.println("=== RUNNING DIAGNOSTICS ===");
-        updateDistances();
-        Serial.print("Distances (cm) - FL: ");
-        Serial.print(distFL);
-        Serial.print(" F: ");
-        Serial.print(distF);
-        Serial.print(" FR: ");
-        Serial.print(distFR);
-        Serial.print(" BL: ");
-        Serial.print(distBL);
-        Serial.print(" B: ");
-        Serial.print(distB);
-        Serial.print(" BR: ");
-        Serial.println(distBR);
-        Serial.println("=== DIAGNOSTIC COMPLETE ===");
-    } else if (strcmp(cmd, "PING") == 0) {
-        // Added to support the new ping method in apriltag_communication.py
-        Serial.println("PONG");
-    } else {
-        // Unknown command
-        Serial.print("ERROR: Unknown command: ");
-        Serial.println(cmd);
+        return;
+    }
+    
+    // Handle TAG command
+    if (strncmp(cmd, "TAG:", 4) == 0) {
+        // Modified to use separate variables and careful parsing
+        char *startPtr = (char*)cmd + 4;  // Move past "TAG:"
+        
+        // Extract tag ID
+        int tagId = atoi(startPtr);
+        
+        // Find first comma
+        char *commaPtr = strchr(startPtr, ',');
+        if (commaPtr == NULL) {
+            Serial.println("ERROR: Invalid TAG format - missing first comma");
+            return;
+        }
+        
+        // Extract distance (convert to float or directly use as speed)
+        float distance = atof(commaPtr + 1);
+        
+        // Find second comma
+        commaPtr = strchr(commaPtr + 1, ',');
+        if (commaPtr == NULL) {
+            Serial.println("ERROR: Invalid TAG format - missing second comma");
+            return;
+        }
+        
+        // Extract direction (single character)
+        char direction = *(commaPtr + 1);
+        
+        // Validate direction
+        if (direction != 'F' && direction != 'B' && 
+            direction != 'L' && direction != 'R' && 
+            direction != 'S') {
+            Serial.println("ERROR: Invalid direction in TAG command");
+            return;
+        }
+        
+        Serial.print("Processing TAG Command: ");
+        Serial.print("Tag ID: ");
+        Serial.print(tagId);
+        Serial.print(", Distance: ");
+        Serial.print(distance);
+        Serial.print(", Direction: ");
+        Serial.println(direction);
+        
+        // Convert speed from distance to motor speed (integer)
+        int motorSpeed = constrain((int)distance, MIN_SPEED, MAX_SPEED);
+        
+        // Ensure speed is high enough to overcome stall torque
+        motorSpeed = max(motorSpeed, 150); // Force minimum of 150 for reliable movement
+        
+        // Execute movement based on direction
+        executeMovement(direction, motorSpeed, tagId);
+        Serial.println("ACK: Tag command processed");
+        return;
+    }
+    
+    // Unknown command
+    Serial.print("ERROR: Unknown command: ");
+    Serial.println(cmd);
+}
+
+void executeMovement(char direction, int speed, int tagId) {
+    // For tag_id=99, we're doing rotation
+    // For tag_id=0, we're doing regular movement
+    bool isRotation = (tagId == 99);
+    
+    switch (direction) {
+        case 'F':
+            if (!isRotation) {
+                Serial.println("Moving FORWARD");
+                moveMotor(motorLeft, FORWARD, speed);
+                moveMotor(motorRight, FORWARD, speed);
+                moveMotor(motorBack, STOP, 0);
+            }
+            break;
+            
+        case 'B':
+            if (!isRotation) {
+                Serial.println("Moving BACKWARD");
+                moveMotor(motorLeft, BACKWARD, speed);
+                moveMotor(motorRight, BACKWARD, speed);
+                moveMotor(motorBack, STOP, 0);
+            }
+            break;
+            
+        case 'L':
+            if (isRotation) {
+                Serial.println("Rotating COUNTERCLOCKWISE");
+                moveMotor(motorLeft, BACKWARD, speed);
+                moveMotor(motorRight, FORWARD, speed);
+                moveMotor(motorBack, FORWARD, speed);
+            } else {
+                Serial.println("Moving LEFT");
+                moveMotor(motorLeft, BACKWARD, speed);
+                moveMotor(motorRight, FORWARD, speed);
+                moveMotor(motorBack, FORWARD, speed);
+            }
+            break;
+            
+        case 'R':
+            if (isRotation) {
+                Serial.println("Rotating CLOCKWISE");
+                moveMotor(motorLeft, FORWARD, speed);
+                moveMotor(motorRight, BACKWARD, speed);
+                moveMotor(motorBack, BACKWARD, speed);
+            } else {
+                Serial.println("Moving RIGHT");
+                moveMotor(motorLeft, FORWARD, speed);
+                moveMotor(motorRight, BACKWARD, speed);
+                moveMotor(motorBack, BACKWARD, speed);
+            }
+            break;
+            
+        case 'S':
+            Serial.println("Stopping all motors");
+            stopAllMotors();
+            break;
+            
+        default:
+            Serial.println("Unknown direction");
+            stopAllMotors();
+            break;
     }
 }
