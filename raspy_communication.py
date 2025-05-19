@@ -24,6 +24,49 @@ DEFAULT_TIMEOUT = 1.0
 RETRY_COUNT = 3
 RETRY_DELAY = 0.1
 
+# List of possible Arduino ports to try
+POSSIBLE_PORTS = [
+    '/dev/ttyACM0',
+    '/dev/ttyACM1',
+    '/dev/ttyUSB0',
+    '/dev/ttyUSB1',
+    '/dev/ttyS0',
+    '/dev/ttyS1'
+]
+
+def find_arduino_port():
+    """Try to find a valid Arduino port by testing multiple ports"""
+    import glob
+    import serial
+    
+    # First try using glob to find ports
+    arduino_ports = glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyUSB*')
+    
+    if arduino_ports:
+        logger.info(f"Found potential Arduino ports: {arduino_ports}")
+        for port in arduino_ports:
+            try:
+                ser = serial.Serial(port, DEFAULT_BAUD_RATE, timeout=0.5)
+                ser.close()
+                logger.info(f"Found active port: {port}")
+                return port
+            except (serial.SerialException, OSError):
+                pass
+    
+    # If glob failed, try the predefined list
+    logger.info("No Arduino ports found with glob, trying predefined list")
+    for port in POSSIBLE_PORTS:
+        try:
+            ser = serial.Serial(port, DEFAULT_BAUD_RATE, timeout=0.5)
+            ser.close()
+            logger.info(f"Found active port: {port}")
+            return port
+        except (serial.SerialException, OSError):
+            pass
+            
+    logger.error("No active Arduino ports found")
+    return DEFAULT_PORT  # Return default as fallback
+
 # Protocol constants - centralizing all command formats
 CMD_TAG = "TAG"
 CMD_POSITION = "POS"
@@ -38,7 +81,7 @@ class TagData:
     """Container for AprilTag detection data"""
     tag_id: int
     distance: float
-    direction: str
+    direction: int  # Now an integer: 0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT
     timestamp: float = None
     
     def __post_init__(self):
@@ -47,7 +90,9 @@ class TagData:
     
     def __str__(self) -> str:
         """String representation for debugging"""
-        return f"Tag({self.tag_id}): {self.distance:.1f}cm, Dir={self.direction}"
+        direction_map = {0: "STOP", 1: "FORWARD", 2: "BACKWARD", 3: "LEFT", 4: "RIGHT"}
+        dir_name = direction_map.get(self.direction, f"UNKNOWN({self.direction})")
+        return f"Tag({self.tag_id}): {self.distance:.1f}cm, Dir={dir_name}"
 
 
 class ArduinoCommunicator:
@@ -67,12 +112,22 @@ class ArduinoCommunicator:
     
     def connect(self) -> bool:
         """Establish connection to Arduino with proper initialization"""
+        # First check if the provided port is available
+        if self.port == DEFAULT_PORT:
+            # If using default, try to find a better port
+            detected_port = find_arduino_port()
+            if detected_port != DEFAULT_PORT:
+                logger.info(f"Auto-detected Arduino port: {detected_port}")
+                self.port = detected_port
+                
+        # Try to connect to the selected port
         try:
             # Close any existing connection first
             if self.serial and self.serial.is_open:
                 self.serial.close()
                 time.sleep(0.5)
-                
+            
+            logger.info(f"Attempting to connect to Arduino on {self.port}")    
             # Open new connection
             self.serial = serial.Serial(self.port, self.baud_rate, timeout=DEFAULT_TIMEOUT)
             # Wait for Arduino to reset and initialize
@@ -98,10 +153,22 @@ class ArduinoCommunicator:
                     self.connected = True
                     return True
             
+            # Try without any command, just checking if port is open
+            if self.serial and self.serial.is_open:
+                logger.info(f"Connected to {self.port} but no response to commands")
+                logger.info("Will try to continue anyway")
+                self.connected = True
+                return True
+            
             # Connection failed
-            logger.error("Arduino handshake failed")
+            logger.error(f"Arduino handshake failed on port {self.port}")
             if self.serial and self.serial.is_open:
                 self.serial.close()
+            self.connected = False
+            return False
+            
+        except serial.SerialException as e:
+            logger.error(f"Serial error on port {self.port}: {e}")
             self.connected = False
             return False
             
@@ -295,8 +362,22 @@ def main():
     comm = ArduinoCommunicator(args.port, args.baud)
     
     if not comm.connect():
-        logger.error("Connection failed")
-        return
+        logger.error("Initial connection failed, trying alternative ports")
+        
+        # Try other possible ports
+        for alt_port in POSSIBLE_PORTS:
+            if alt_port == args.port:  # Skip the port we already tried
+                continue
+                
+            logger.info(f"Trying alternate port: {alt_port}")
+            comm = ArduinoCommunicator(alt_port, args.baud)
+            if comm.connect():
+                logger.info(f"Successfully connected on alternate port: {alt_port}")
+                break
+        else:
+            logger.error("Failed to connect on any port. Make sure Arduino is connected and powered on.")
+            logger.error("If using a physical robot, check the USB connection. If using a simulator, make sure it's running.")
+            return
     
     try:
         if args.interactive:
@@ -321,10 +402,12 @@ def main():
                 elif choice == '2':
                     tag_id = int(input("Tag ID (default=1): ") or "1")
                     distance = float(input("Distance (default=50): ") or "50")
-                    direction = input("Direction (F,B,L,R,S) (default=F): ").upper() or "F"
-                    if direction not in 'FBLRS':
-                        print("Invalid direction! Using F")
-                        direction = 'F'
+                    print("Direction options:")
+                    print("0 = STOP, 1 = FORWARD, 2 = BACKWARD, 3 = LEFT, 4 = RIGHT")
+                    direction = int(input("Direction (0-4) (default=1): ") or "1")
+                    if direction < 0 or direction > 4:
+                        print("Invalid direction! Using 1 (FORWARD)")
+                        direction = 1
                         
                     tag = TagData(tag_id=tag_id, distance=distance, direction=direction)
                     success = comm.send_tag_data(tag)
@@ -357,7 +440,7 @@ def main():
             
             # Send a TAG command
             print("\n2. Testing TAG command")
-            tag = TagData(tag_id=1, distance=50.0, direction='F')
+            tag = TagData(tag_id=1, distance=50.0, direction=1)  # 1 = FORWARD
             tag_success = comm.send_tag_data(tag)
             print(f"TAG command: {'Success' if tag_success else 'Failed'}")
             time.sleep(1.0)

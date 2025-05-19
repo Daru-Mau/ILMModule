@@ -23,6 +23,11 @@ int MAX_SPEED = 150;  // Increased from 50 to overcome motor stall torque
 int MIN_SPEED = 100;  // Increased from 40 for more noticeable movement
 #define DEBUG_MODE true          // Set to true for verbose output, false for reduced output
 
+// Message framing characters for UART communication
+const char START_MARKER = '<';
+const char END_MARKER = '>';
+const char ESCAPE_CHAR = '\\';
+
 // Optimized movement parameters
 const float PID_KP = 2.0f;
 const float PID_KI = 0.1f;
@@ -519,9 +524,10 @@ void setup() {
     }
     
     Serial.println(F("\n=================================="));
-    Serial.println(F("Integrated Movement Controller v1.0"));
+    Serial.println(F("Integrated Movement Controller v1.1"));
     Serial.println(F("April Tag tracking with obstacle avoidance"));
     Serial.println(F("Commands: TAG:id,distance,direction | TEST | STOP | PING | SPEED:max_speed,min_speed"));
+    Serial.println(F("Direction codes: 0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT"));
     Serial.println(F("=================================="));
     
     // Test motors with a quick pulse to confirm they're working
@@ -611,20 +617,60 @@ void loop() {
 }
 
 void processSerialInput() {
-    static char buffer[64];  // Increased buffer size
+    static char buffer[COMMAND_BUFFER_SIZE];
     static uint8_t index = 0;
+    static boolean messageStarted = false;
+    static boolean escapeNext = false;
     
     while (Serial.available()) {
         char c = Serial.read();
         
-        if (c == '\n' || c == '\r') {
+        // Handle traditional newline-terminated commands for backward compatibility
+        if (!messageStarted && (c == '\n' || c == '\r')) {
             if (index > 0) {  // Only process non-empty commands
                 buffer[index] = '\0';
                 parseCommand(buffer);
                 index = 0;
             }
-        } else if (index < sizeof(buffer) - 1) {
-            buffer[index++] = c;
+        }
+        // Handle framed commands with start/end markers
+        else if (c == START_MARKER && !escapeNext) {
+            // Start of new message
+            messageStarted = true;
+            index = 0;
+        }
+        else if (c == END_MARKER && !escapeNext && messageStarted) {
+            // End of message
+            buffer[index] = '\0';
+            parseCommand(buffer);
+            messageStarted = false;
+            index = 0;
+        }
+        else if (c == ESCAPE_CHAR && !escapeNext) {
+            // Escape character
+            escapeNext = true;
+        }
+        else {
+            // Regular character or escaped special character
+            if (index < COMMAND_BUFFER_SIZE - 1) {
+                if (escapeNext) {
+                    // Store the character after escape directly
+                    buffer[index++] = c;
+                    escapeNext = false;
+                } 
+                else if (messageStarted) {
+                    // Only store if we're inside a message
+                    buffer[index++] = c;
+                }
+                else if (!messageStarted && index == 0 && c != ' ') {
+                    // For backward compatibility, start a non-framed command
+                    buffer[index++] = c;
+                }
+                else if (!messageStarted && index > 0) {
+                    // Continue a non-framed command
+                    buffer[index++] = c;
+                }
+            }
         }
     }
 }
@@ -636,8 +682,37 @@ void parseCommand(const char* cmd) {
         Serial.println(cmd);
     }
     
-    // Check for TEST command
-    if (strcmp(cmd, "TEST") == 0) {
+    // Check for command type and parameters
+    char command[16] = {0};
+    char params[COMMAND_BUFFER_SIZE - 16] = {0};
+    
+    // Extract command and parameters (split on first colon)
+    int colonPos = -1;
+    for (int i = 0; cmd[i] != '\0'; i++) {
+        if (cmd[i] == ':') {
+            colonPos = i;
+            break;
+        }
+    }
+    
+    if (colonPos >= 0) {
+        // Copy command part
+        strncpy(command, cmd, min(colonPos, 15));
+        command[min(colonPos, 15)] = '\0';
+        
+        // Copy parameters part
+        strncpy(params, cmd + colonPos + 1, COMMAND_BUFFER_SIZE - 17);
+        params[COMMAND_BUFFER_SIZE - 17] = '\0';
+    } else {
+        // No parameters, just command
+        strncpy(command, cmd, 15);
+        command[15] = '\0';
+        params[0] = '\0';
+    }
+    
+    // Handle different command types
+    if (strcmp(command, "TEST") == 0) {
+        Serial.println("<ACK:TEST>");
         Serial.println("=== RUNNING DIAGNOSTICS ===");
         updateDistances();
         Serial.print("Distances (cm) - FL: ");
@@ -674,25 +749,26 @@ void parseCommand(const char* cmd) {
     }
     
     // Check for PING command
-    if (strcmp(cmd, "PING") == 0) {
+    if (strcmp(command, "PING") == 0) {
+        Serial.println("<ACK:PING>");
         Serial.println("PONG");
         return;
     }
     
     // Check for STOP/CLEAR commands
-    if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "CLEAR") == 0) {
+    if (strcmp(command, "STOP") == 0 || strcmp(command, "CLEAR") == 0) {
         // Stop robot and reset controller
         tagController.reset();
         stopAllMotors();
-        Serial.println("ACK: Stopped and reset");
+        Serial.println("<ACK:STOP>");
         return;
     }
     
     // Handle SPEED command
-    if (strncmp(cmd, "SPEED:", 6) == 0) {
+    if (strcmp(command, "SPEED") == 0) {
         // Command format: SPEED:max_speed,min_speed
         int newMaxSpeed, newMinSpeed;
-        if (sscanf(cmd + 6, "%d,%d", &newMaxSpeed, &newMinSpeed) == 2) {
+        if (sscanf(params, "%d,%d", &newMaxSpeed, &newMinSpeed) == 2) {
             // Apply constraints to ensure valid values
             newMaxSpeed = constrain(newMaxSpeed, 50, 255);
             newMinSpeed = constrain(newMinSpeed, 30, newMaxSpeed);
@@ -701,59 +777,89 @@ void parseCommand(const char* cmd) {
             MAX_SPEED = newMaxSpeed;
             MIN_SPEED = newMinSpeed;
             
-            Serial.print("ACK: Speed parameters updated - MAX_SPEED=");
+            Serial.print("<ACK:SPEED>");
+            Serial.print(" MAX_SPEED=");
             Serial.print(MAX_SPEED);
             Serial.print(", MIN_SPEED=");
             Serial.println(MIN_SPEED);
         } else {
-            Serial.println("ERROR: Invalid SPEED format. Use SPEED:max_speed,min_speed");
+            Serial.println("<ERR:Invalid SPEED format>");
         }
         return;
     }
     
+    // Handle SENSOR command - return current sensor values
+    if (strcmp(command, "SENSOR") == 0 || strcmp(command, "SENS") == 0) {
+        updateDistances(); // Ensure fresh readings
+        
+        // Format: SENS:front,front_left,front_right,back,back_left,back_right
+        Serial.print("<SENS:");
+        Serial.print(distF);
+        Serial.print(",");
+        Serial.print(distFL);
+        Serial.print(",");
+        Serial.print(distFR);
+        Serial.print(",");
+        Serial.print(distB);
+        Serial.print(",");
+        Serial.print(distBL);
+        Serial.print(",");
+        Serial.print(distBR);
+        Serial.println(">");
+        return;
+    }
+    
+    // Handle MOVE command
+    if (strcmp(command, "MOVE") == 0) {
+        // Command format: MOVE:direction[,speed]
+        int direction, speed = 150; // Default speed
+        
+        // Parse parameters
+        if (sscanf(params, "%d,%d", &direction, &speed) < 1) {
+            Serial.println("<ERR:Invalid MOVE format>");
+            return;
+        }
+        
+        // Validate direction (0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT)
+        if (direction < 0 || direction > 4) {
+            Serial.println("<ERR:Invalid direction>");
+            return;
+        }
+        
+        // Execute movement
+        executeMovement(direction, speed, 0);
+        Serial.println("<ACK:MOVE>");
+        return;
+    }
+    
     // Handle TAG command
-    if (strncmp(cmd, "TAG:", 4) == 0) {
-        // Modified to use separate variables and careful parsing
-        char *startPtr = (char*)cmd + 4;  // Move past "TAG:"
+    if (strcmp(command, "TAG") == 0) {
+        // Format: TAG:id,distance,direction
+        int tagId = 0;
+        float distance = 0.0f;
+        int direction = 0;
         
-        // Extract tag ID
-        int tagId = atoi(startPtr);
-        
-        // Find first comma
-        char *commaPtr = strchr(startPtr, ',');
-        if (commaPtr == NULL) {
-            Serial.println("ERROR: Invalid TAG format - missing first comma");
+        // Parse parameters
+        if (sscanf(params, "%d,%f,%d", &tagId, &distance, &direction) != 3) {
+            Serial.println("<ERR:Invalid TAG format>");
             return;
         }
         
-        // Extract distance (convert to float or directly use as speed)
-        float distance = atof(commaPtr + 1);
-        
-        // Find second comma
-        commaPtr = strchr(commaPtr + 1, ',');
-        if (commaPtr == NULL) {
-            Serial.println("ERROR: Invalid TAG format - missing second comma");
+        // Validate direction (0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT)
+        if (direction < 0 || direction > 4) {
+            Serial.println("<ERR:Invalid direction>");
             return;
         }
         
-        // Extract direction (single character)
-        char direction = *(commaPtr + 1);
-        
-        // Validate direction
-        if (direction != 'F' && direction != 'B' && 
-            direction != 'L' && direction != 'R' && 
-            direction != 'S') {
-            Serial.println("ERROR: Invalid direction in TAG command");
-            return;
+        if (DEBUG_MODE) {
+            Serial.print("Processing TAG Command: ");
+            Serial.print("Tag ID: ");
+            Serial.print(tagId);
+            Serial.print(", Distance: ");
+            Serial.print(distance);
+            Serial.print(", Direction: ");
+            Serial.println(direction);
         }
-        
-        Serial.print("Processing TAG Command: ");
-        Serial.print("Tag ID: ");
-        Serial.print(tagId);
-        Serial.print(", Distance: ");
-        Serial.print(distance);
-        Serial.print(", Direction: ");
-        Serial.println(direction);
         
         // Convert speed from distance to motor speed (integer)
         int motorSpeed = constrain((int)distance, MIN_SPEED, MAX_SPEED);
@@ -763,74 +869,122 @@ void parseCommand(const char* cmd) {
         
         // Execute movement based on direction
         executeMovement(direction, motorSpeed, tagId);
-        Serial.println("ACK: Tag command processed");
+        Serial.println("<ACK:TAG>");
+        return;
+    }
+    
+    // Handle MOTORS/MCTL command for direct motor control
+    if (strcmp(command, "MOTORS") == 0 || strcmp(command, "MCTL") == 0) {
+        // Command format: MCTL:left_speed,right_speed,back_speed
+        int leftSpeed = 0, rightSpeed = 0, backSpeed = 0;
+        
+        if (sscanf(params, "%d,%d,%d", &leftSpeed, &rightSpeed, &backSpeed) == 3) {
+            // Constrain speeds to valid range (-255 to 255)
+            leftSpeed = constrain(leftSpeed, -255, 255);
+            rightSpeed = constrain(rightSpeed, -255, 255);
+            backSpeed = constrain(backSpeed, -255, 255);
+            
+            // Apply motor speeds directly
+            if (leftSpeed > 0) 
+                moveMotor(motorLeft, FORWARD, leftSpeed);
+            else if (leftSpeed < 0)
+                moveMotor(motorLeft, BACKWARD, -leftSpeed);
+            else
+                moveMotor(motorLeft, STOP, 0);
+                
+            if (rightSpeed > 0)
+                moveMotor(motorRight, FORWARD, rightSpeed);
+            else if (rightSpeed < 0)
+                moveMotor(motorRight, BACKWARD, -rightSpeed);
+            else
+                moveMotor(motorRight, STOP, 0);
+                
+            if (backSpeed > 0)
+                moveMotor(motorBack, FORWARD, backSpeed);
+            else if (backSpeed < 0)
+                moveMotor(motorBack, BACKWARD, -backSpeed);
+            else
+                moveMotor(motorBack, STOP, 0);
+                
+            Serial.println("<ACK:MCTL>");
+        } else {
+            Serial.println("<ERR:Invalid MCTL format>");
+        }
         return;
     }
     
     // Unknown command
-    Serial.print("ERROR: Unknown command: ");
-    Serial.println(cmd);
+    Serial.print("<ERR:Unknown command: ");
+    Serial.print(command);
+    Serial.println(">");
 }
 
-void executeMovement(char direction, int speed, int tagId) {
+void executeMovement(int direction, int speed, int tagId) {
     // For tag_id=99, we're doing rotation
     // For tag_id=0, we're doing regular movement
     bool isRotation = (tagId == 99);
     
+    // Direction mapping:
+    // 0 = STOP
+    // 1 = FORWARD
+    // 2 = BACKWARD
+    // 3 = LEFT
+    // 4 = RIGHT
+    
     switch (direction) {
-        case 'F':
+        case 1: // FORWARD
             if (!isRotation) {
-                Serial.println("Moving FORWARD");
+                if (DEBUG_MODE) Serial.println("Moving FORWARD");
                 moveMotor(motorLeft, FORWARD, speed);
                 moveMotor(motorRight, FORWARD, speed);
                 moveMotor(motorBack, STOP, 0);
             }
             break;
             
-        case 'B':
+        case 2: // BACKWARD
             if (!isRotation) {
-                Serial.println("Moving BACKWARD");
+                if (DEBUG_MODE) Serial.println("Moving BACKWARD");
                 moveMotor(motorLeft, BACKWARD, speed);
                 moveMotor(motorRight, BACKWARD, speed);
                 moveMotor(motorBack, STOP, 0);
             }
             break;
             
-        case 'L':
+        case 3: // LEFT
             if (isRotation) {
-                Serial.println("Rotating COUNTERCLOCKWISE");
+                if (DEBUG_MODE) Serial.println("Rotating COUNTERCLOCKWISE");
                 moveMotor(motorLeft, BACKWARD, speed);
                 moveMotor(motorRight, FORWARD, speed);
                 moveMotor(motorBack, FORWARD, speed);
             } else {
-                Serial.println("Moving LEFT");
+                if (DEBUG_MODE) Serial.println("Moving LEFT");
                 moveMotor(motorLeft, BACKWARD, speed);
                 moveMotor(motorRight, FORWARD, speed);
                 moveMotor(motorBack, FORWARD, speed);
             }
             break;
             
-        case 'R':
+        case 4: // RIGHT
             if (isRotation) {
-                Serial.println("Rotating CLOCKWISE");
+                if (DEBUG_MODE) Serial.println("Rotating CLOCKWISE");
                 moveMotor(motorLeft, FORWARD, speed);
                 moveMotor(motorRight, BACKWARD, speed);
                 moveMotor(motorBack, BACKWARD, speed);
             } else {
-                Serial.println("Moving RIGHT");
+                if (DEBUG_MODE) Serial.println("Moving RIGHT");
                 moveMotor(motorLeft, FORWARD, speed);
                 moveMotor(motorRight, BACKWARD, speed);
                 moveMotor(motorBack, BACKWARD, speed);
             }
             break;
             
-        case 'S':
-            Serial.println("Stopping all motors");
+        case 0: // STOP
+            if (DEBUG_MODE) Serial.println("Stopping all motors");
             stopAllMotors();
             break;
             
         default:
-            Serial.println("Unknown direction");
+            if (DEBUG_MODE) Serial.println("Unknown direction code");
             stopAllMotors();
             break;
     }

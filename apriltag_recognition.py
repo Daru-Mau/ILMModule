@@ -215,15 +215,16 @@ def get_direction(detection, frame_width):
     tolerance = frame_width * CENTER_TOLERANCE
     
     # Determine direction based on tag position and distance
+    # Direction codes: 0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT
     if distance_cm < DISTANCE_THRESHOLD:
-        return 'S', distance_cm  # Stop when close enough
+        return 0, distance_cm  # Stop when close enough
     
     if center_x < frame_center - tolerance:
-        return 'L', distance_cm  # Turn left
+        return 3, distance_cm  # Turn left
     elif center_x > frame_center + tolerance:
-        return 'R', distance_cm  # Turn right
+        return 4, distance_cm  # Turn right
     else:
-        return 'F', distance_cm  # Move forward
+        return 1, distance_cm  # Move forward
 
 def preprocess_image(frame):
     """Advanced image preprocessing for better tag detection"""
@@ -424,11 +425,11 @@ def main():
                     last_command_time = current_time
                 elif arduino is None and VERBOSE and current_time - last_command_time >= command_interval:
                     command_text = {
-                        'F': "FORWARD",
-                        'B': "BACKWARD",
-                        'L': "LEFT",
-                        'R': "RIGHT",
-                        'S': "STOP"
+                        1: "FORWARD",
+                        2: "BACKWARD",
+                        3: "LEFT",
+                        4: "RIGHT",
+                        0: "STOP"
                     }.get(direction, "UNKNOWN")
                     
                     print(f"COMMAND: {command_text} | Tag {main_tag.tag_id} | Distance: {distance_cm:.1f}cm")
@@ -445,7 +446,7 @@ def main():
                 elif arduino is None and VERBOSE and current_time - last_command_time >= command_interval:
                     # Display stop command when no tags are detected and Arduino is not connected
                     if frame_count % 10 == 0:  # Limit frequency of these messages
-                        print("COMMAND: STOP | No tags detected")
+                        print("COMMAND: STOP | Direction code: 0 | No tags detected")
                     last_command_time = current_time
             
             # Brief pause to reduce CPU load
