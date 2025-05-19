@@ -1,6 +1,6 @@
 # Localization Module (LMModule)
 
-A robust localization and navigation system for an omnidirectional robot featuring AprilTag-based positioning, sensor fusion, and advanced movement control.
+A robust localization and navigation system for an omnidirectional robot featuring AprilTag-based positioning, sensor fusion, and advanced movement control with UART communication.
 
 ## Features
 
@@ -100,20 +100,53 @@ A robust localization and navigation system for an omnidirectional robot featuri
    - Calibrate sensors using built-in calibration routines
 
 3. **Testing**
-   - Run individual component tests using Testing_Motors and Testing_Sensors
+   - Run individual component tests using `Testing_Motors/Testing_Motors.ino` and `Testing_Sensors/Testing_Sensors.ino`
    - Verify sensor readings and motor operation
-   - Check AprilTag detection accuracy
+   - Check AprilTag detection accuracy with `test_apriltag_uart.py`
+   - Test UART communication with `test_uart_communication.py`
    - Validate emergency stop functionality
 
 ## Project Structure
 
-- `apriltag_communication.py`: Serial communication handling
-- `apriltag_recognition.py`: Vision processing and tag detection
-- `ILMMCodes/`: Arduino implementations
-  - `apriltag_movement/`: Main movement control system
-  - `basic_moveset/`: Basic movement testing
-  - `fine_moveset/`: Enhanced movement control
-  - `localization/`: Sensor fusion and positioning
+- **Core Components**:
+
+  - `apriltag_recognition.py`: Vision processing and tag detection (updated for UART)
+  - `apriltag_uart_controller.py`: Alternative implementation with UART communication
+  - `uart_communication.py`: Robust UART communication library
+  - `test_apriltag_uart.py`: Testing tool for UART communication
+  - `test_uart_communication.py`: UART communication test utility
+  - `camera_test.py`: Utility for testing camera functionality
+  - `monitor_sensor_data_fixed.py`: Tool for monitoring sensor data
+
+- **Launcher Scripts**:
+
+  - `launch_apriltag_uart.py`: Easy-to-use launcher for AprilTag recognition system
+  - `launch_apriltag_controller.py`: Launcher for alternative controller implementation
+
+- **Documentation**:
+
+  - `APRILTAG_UART_README.md`: User guide for the UART AprilTag system
+  - `UART_COMMUNICATION_GUIDE.md`: Detailed guide for UART communication
+  - `UART_INTEGRATION_SUMMARY.md`: Summary of the UART integration process
+
+- **Arduino Code**:
+  - `ILMMCodes/`: All Arduino implementations:
+    - `integrated_movement/`: Main Arduino implementation for the robot
+    - `apriltag_movement/`: Tag-following implementation
+    - `localization/`: Sensor fusion and positioning
+    - `basic_moveset/`: Basic movement functions
+    - `fine_moveset/`: Fine-tuned movement control
+- **Testing Tools**:
+
+  - `Testing_Motors/`: Test code for motor functionality
+  - `Testing_Sensors/`: Test code for sensor functionality
+
+- **Project Documentation**:
+  - `Robotics & Design_ Localization module anthology/`: Complete project documentation including:
+    - Technical drawings
+    - Hardware schematics
+    - Project photos
+    - LaTeX documentation
 
 ## Safety Features
 
@@ -142,5 +175,6 @@ A robust localization and navigation system for an omnidirectional robot featuri
 
 ## Contributors
 
-- Project documentation and technical drawings available in the anthology
-- Hardware schematics provided in `pfds/IL_schema.pdf`
+- Project documentation and technical drawings available in the `Robotics & Design_ Localization module anthology/` directory
+- Hardware schematics provided in `Robotics & Design_ Localization module anthology/pfds/IL_schema.pdf`
+- Obsolete and legacy files safely archived in `Obsolete_Files/`
