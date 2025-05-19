@@ -15,23 +15,13 @@
 // === Performance Settings ===
 #define SERIAL_BAUD_RATE 115200  // Increased baud rate
 #define COMMAND_BUFFER_SIZE 64
-#define CONTROL_LOO// Send sensor data to Raspberry Pi
-void sendSensorData() {
-    // Prepare and send a structured data packet with proper line endings
-    char dataPacket[128];
-    snprintf(dataPacket, sizeof(dataPacket), "SENS:FL:%.1f,F:%.1f,FR:%.1f,BL:%.1f,B:%.1f,BR:%.1f\r\n",
-             distFL, distF, distFR, distBL, distB, distBR);
-    
-    Serial.print(dataPacket);
-    Serial.flush();
-} 50  // 20Hz control loop
+#define CONTROL_LOOP_INTERVAL 50  // 20Hz control loop
 #define POSITION_TOLERANCE 5.0f   // mm
 #define ROTATION_TOLERANCE 0.05f  // radians
 // Changed from #define to global variables so they can be modified at runtime
 int MAX_SPEED = 150;  // Increased from 50 to overcome motor stall torque
 int MIN_SPEED = 100;  // Increased from 40 for more noticeable movement
 #define DEBUG_MODE true          // Set to true for verbose output, false for reduced output
-#define SENSOR_DATA_INTERVAL 500  // Send sensor data every 500ms
 
 // Optimized movement parameters
 const float PID_KP = 2.0f;
@@ -55,20 +45,17 @@ const float ACCEL_RATE = 0.15f;  // Speed change per cycle (0-1)
 #define REN_BACK 51
 #define LEN_BACK 50 */
 
-// === Motor Driver Pins CWW ===
-// Right Motor
-#define RPWM_RIGHT 7
-#define LPWM_RIGHT 6 
+// Motor Driver Pins CWW
+#define RPWM_RIGHT 6 
+#define LPWM_RIGHT 7 
 #define REN_RIGHT 51
 #define LEN_RIGHT 50
-// Left Motor
-#define RPWM_LEFT 2
-#define LPWM_LEFT 3     
-#define REN_LEFT 38
-#define LEN_LEFT 39
-// Back Motor
-#define RPWM_BACK 4
-#define LPWM_BACK 5
+#define RPWM_LEFT 3 
+#define LPWM_LEFT 2     
+#define REN_LEFT 39
+#define LEN_LEFT 38
+#define RPWM_BACK 5
+#define LPWM_BACK 4
 #define REN_BACK 44
 #define LEN_BACK 45
 
@@ -80,19 +67,34 @@ const float ACCEL_RATE = 0.15f;  // Speed change per cycle (0-1)
 #define ENC_BACK_C1 52
 #define ENC_BACK_C2 53
 
-// Ultrasonic Sensor Pins
-#define TRIG_B 24
-#define ECHO_B 25
+/* // Ultrasonic Sensor Pins - Normal Setting
 #define TRIG_BL 26
 #define ECHO_BL 27
+#define TRIG_B 24
+#define ECHO_B 25
 #define TRIG_BR 28
 #define ECHO_BR 29
-#define TRIG_FL 30
-#define ECHO_FL 31
+#define TRIG_FR 34
+#define ECHO_FR 35 
 #define TRIG_F 32
 #define ECHO_F 33
-#define TRIG_FR 34
-#define ECHO_FR 35
+#define TRIG_FL 30
+#define ECHO_FL 31 
+*/
+
+// Ultrasonic Sensor Pins - Rotated Front
+#define TRIG_F 28   
+#define ECHO_F 29   
+#define TRIG_FL 34  
+#define ECHO_FL 35  
+#define TRIG_FR 24  
+#define ECHO_FR 25  
+#define TRIG_BL 32 
+#define ECHO_BL 33  
+#define TRIG_B 30   
+#define ECHO_B 31   
+#define TRIG_BR 26  
+#define ECHO_BR 27  
 
 // === Enhanced Configuration ===
 const float CRITICAL_DISTANCE = 10.0;  // Emergency stop distance (cm)
@@ -452,35 +454,20 @@ void stopAllMotors() {
     moveMotor(motorBack, STOP, 0);
 }
 
-// Read distance from ultrasonic sensor with error handling
+// Read distance from ultrasonic sensor
 float readDistance(int trigPin, int echoPin) {
-    // Reset trigger pin
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
-    
-    // Send trigger pulse
     digitalWrite(trigPin, HIGH);
     delayMicroseconds(10);
     digitalWrite(trigPin, LOW);
 
-    // Measure echo pulse duration with timeout
-    long duration = pulseIn(echoPin, HIGH, 30000); // 30ms timeout
-    
-    // Handle timeout or invalid readings
-    if (duration <= 0) {
-        return 400.0; // Return a large but valid value instead of 999
-    }
-    
-    // Convert time to distance (cm) - speed of sound is ~340m/s or 0.034cm/μs
-    float distance = duration * 0.034 / 2.0;
-    
-    // Limit to reasonable range
-    return constrain(distance, 0.1, 400.0);
+    long duration = pulseIn(echoPin, HIGH, 30000);
+    return (duration <= 0) ? 999.0 : duration * 0.034 / 2.0;
 }
 
 // Update all sensor distance readings
 void updateDistances() {
-    // Read all sensor distances
     distFL = readDistance(TRIG_FL, ECHO_FL);
     distF = readDistance(TRIG_F, ECHO_F);
     distFR = readDistance(TRIG_FR, ECHO_FR);
@@ -488,15 +475,7 @@ void updateDistances() {
     distB = readDistance(TRIG_B, ECHO_B);
     distBR = readDistance(TRIG_BR, ECHO_BR);
 
-    // Filter out invalid readings
-    if (distFL >= 400.0) distFL = 400.0;
-    if (distF >= 400.0) distF = 400.0;
-    if (distFR >= 400.0) distFR = 400.0;
-    if (distBL >= 400.0) distBL = 400.0;
-    if (distB >= 400.0) distB = 400.0;
-    if (distBR >= 400.0) distBR = 400.0;
-
-    // Check for emergency stop condition (only using valid readings)
+    // Check for emergency stop condition
     emergencyStop = (distF < CRITICAL_DISTANCE || distFL < CRITICAL_DISTANCE ||
                    distFR < CRITICAL_DISTANCE || distB < CRITICAL_DISTANCE ||
                    distBL < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
@@ -504,17 +483,6 @@ void updateDistances() {
     if (emergencyStop) {
         Serial.println("EMERGENCY STOP - OBSTACLE DETECTED");
     }
-}
-
-// Send sensor data to Raspberry Pi
-void sendSensorData() {
-    // Prepare and send a structured data packet
-    char dataPacket[128];
-    snprintf(dataPacket, sizeof(dataPacket), "SENS:FL:%.1f,F:%.1f,FR:%.1f,BL:%.1f,B:%.1f,BR:%.1f\r\n",
-             distFL, distF, distFR, distBL, distB, distBR);
-    
-    Serial.print(dataPacket);
-    Serial.flush();
 }
 
 // Global controller instance
@@ -596,10 +564,8 @@ void loop() {
         processSerialInput();
     }
     
-    // Track timing for various updates
-    unsigned long now = millis();
-    
     // Update sensor readings at fixed intervals
+    unsigned long now = millis();
     if (now - lastSensorUpdate >= REACTION_DELAY) {
         updateDistances();
         lastSensorUpdate = now;
@@ -641,17 +607,6 @@ void loop() {
         } else {
             tagController.processMovement();
         }
-    }
-    
-    // Send sensor data to Raspberry Pi at regular intervals
-    static unsigned long lastSensorDataTime = 0;
-    static unsigned long lastSerialOutput = 0;
-    
-    // Ensure sufficient gap between any serial outputs
-    if (now - lastSensorDataTime >= SENSOR_DATA_INTERVAL && now - lastSerialOutput >= 100) {
-        sendSensorData();
-        lastSensorDataTime = now;
-        lastSerialOutput = now;
     }
 }
 
@@ -715,13 +670,6 @@ void parseCommand(const char* cmd) {
         moveMotor(motorBack, STOP, 0);
         
         Serial.println("=== DIAGNOSTIC COMPLETE ===");
-        return;
-    }
-    
-    // Check for SENSOR command to send immediate sensor data
-    if (strcmp(cmd, "SENSOR") == 0) {
-        updateDistances();  // Update readings first
-        sendSensorData();   // Send the data immediately
         return;
     }
     
