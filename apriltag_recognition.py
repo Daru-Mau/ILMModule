@@ -257,9 +257,9 @@ def main():
     import argparse
     global SERIAL_PORT
     parser = argparse.ArgumentParser(description='AprilTag Detection and Robot Control')
-    parser.add_argument('--max-speed', type=int, default=150,
+    parser.add_argument('--max-speed', type=int, default=50,
                         help='Maximum motor speed (50-255)')
-    parser.add_argument('--min-speed', type=int, default=100,
+    parser.add_argument('--min-speed', type=int, default=40,
                         help='Minimum motor speed (30-max_speed)')
     parser.add_argument('--port', type=str, default=SERIAL_PORT,
                         help=f'Serial port (default: {SERIAL_PORT})')
