@@ -8,10 +8,15 @@ Features:
 - Automated motor tests
 - Direct serial communication mode
 - Support for both integrated_movement.ino and basic_moveset.ino
+- Diagonal movement support
+- Acceleration control
+- 2-wheel/3-wheel mode selection
 
 Usage:
 - Automated tests: python motor_test.py --test [test_name]
 - Interactive mode: python motor_test.py --interactive
+- Set wheel mode: python motor_test.py --mode 2wheel (or 3wheel)
+- Set acceleration: python motor_test.py --accel on (or off)
 """
 
 import time
@@ -24,12 +29,11 @@ from typing import Optional
 try:
     from communication_test import ArduinoCommunicator, TagData
 except ImportError:
-    print("Error: apriltag_communication.py module not found.")
-    print("Make sure this script is in the same directory as apriltag_communication.py")
+    print("Error: communication_test.py module not found.")
+    print("Make sure this script is in the same directory as communication_test.py")
     sys.exit(1)
 
 # Default settings
-# Updated to the correct port where Arduino is detected
 DEFAULT_PORT = '/dev/ttyACM0'
 DEFAULT_BAUD_RATE = 115200
 DEFAULT_TEST_DURATION = 2.0  # seconds
@@ -65,6 +69,10 @@ class MotorTester:
             print(
                 "Note: Arduino connected but not responding to ping. Continuing anyway.")
             # Don't set connected to False, just continue
+
+        # Set the initial mode and acceleration
+        self._set_mode(self.mode)
+        self._set_accel(self.accel)
 
         print("Successfully connected to Arduino.")
         return True
@@ -135,7 +143,9 @@ class MotorTester:
         result = self.arduino.send_test_command()
         if not result:
             print("Diagnostics command failed.")
-            return False        # Get additional response data
+            return False
+
+        # Get additional response data
         response = self.arduino._get_response(1.0)
         print(f"Diagnostics Response: {response}")
         print("=== Diagnostics Complete ===")
@@ -147,8 +157,7 @@ class MotorTester:
 
         Parameters:
         - direction: 'F'(forward), 'B'(backward), 'L'(left), 'R'(right), 'CW'(clockwise), 'CCW'(counterclockwise)
-                     'FWL'(forward-left), 'FWR'(forward- \
-                           right), 'BWL'(backward-left), 'BWR'(backward-right)
+                     'FWL'(forward-left), 'FWR'(forward-right), 'BWL'(backward-left), 'BWR'(backward-right)
         - distance: arbitrary units used by the Arduino for speed control
         - duration: how long to move in seconds
         """
@@ -174,9 +183,14 @@ class MotorTester:
         # Use tag_id=0 for regular movement, tag_id=99 for rotation
         tag_id = 99 if direction in ['CW', 'CCW'] else 0
 
-        # Create tag data
-        tag = TagData(tag_id=tag_id, distance=distance,
-                      direction=tag_direction)
+        # Create tag data with mode and acceleration parameters
+        tag = TagData(
+            tag_id=tag_id,
+            distance=distance,
+            direction=tag_direction,
+            mode=self.mode,
+            acceleration=self.accel
+        )
 
         print(
             f"Moving {direction} at speed {distance} for {duration} seconds...")
@@ -224,17 +238,20 @@ class MotorTester:
         if motor.lower() == 'left':
             # To isolate left motor: vx=0, vy=-1, omega=0 (backward)
             print("Testing LEFT motor FORWARD...")
-            tag = TagData(tag_id=1, distance=speed, direction='B')
+            tag = TagData(tag_id=1, distance=speed, direction='B',
+                          mode=self.mode, acceleration=self.accel)
             success = self.arduino.send_tag_data(tag)
         elif motor.lower() == 'right':
             # To isolate right motor: vx=0, vy=1, omega=0 (forward)
             print("Testing RIGHT motor FORWARD...")
-            tag = TagData(tag_id=2, distance=speed, direction='F')
+            tag = TagData(tag_id=2, distance=speed, direction='F',
+                          mode=self.mode, acceleration=self.accel)
             success = self.arduino.send_tag_data(tag)
         elif motor.lower() == 'back':
             # To isolate back motor: vx=1, vy=0, omega=0 (right)
             print("Testing BACK motor FORWARD...")
-            tag = TagData(tag_id=3, distance=speed, direction='R')
+            tag = TagData(tag_id=3, distance=speed, direction='R',
+                          mode=self.mode, acceleration=self.accel)
             success = self.arduino.send_tag_data(tag)
         else:
             print(f"Unknown motor: {motor}")
@@ -284,6 +301,16 @@ class MotorTester:
              self.move, ["CW", speed, duration]),
             ("counterclockwise", "COUNTERCLOCKWISE rotation",
              self.move, ["CCW", speed, duration]),
+
+            # Diagonal movements
+            ("forward-left", "FORWARD-LEFT diagonal",
+             self.move, ["FWL", speed, duration]),
+            ("forward-right", "FORWARD-RIGHT diagonal",
+             self.move, ["FWR", speed, duration]),
+            ("backward-left", "BACKWARD-LEFT diagonal",
+             self.move, ["BWL", speed, duration]),
+            ("backward-right", "BACKWARD-RIGHT diagonal",
+             self.move, ["BWR", speed, duration]),
         ]
 
         print("\n=== Starting Comprehensive Motor Tests ===")
@@ -304,7 +331,9 @@ class MotorTester:
             time.sleep(0.5)
 
         print("\n=== Motor Tests Completed ===")
-        return True def interactive_mode(self) -> None:
+        return True
+
+    def interactive_mode(self) -> None:
         """Run an interactive serial control session"""
         if hasattr(self, 'arduino') and hasattr(self.arduino, 'serial') and self.arduino.serial:
             # We'll use the existing serial connection
@@ -373,7 +402,26 @@ class MotorTester:
                         print("Invalid direction! Using F (forward).")
                         direction = 'F'
 
-                    cmd = f"TAG:{tag_id},{distance},{direction}\r\n"
+                    # Optional parameters
+                    use_mode = input(
+                        "Include wheel mode? (y/n, default: n): ").lower() or "n"
+                    if use_mode == 'y':
+                        wheel_mode = input(
+                            "Enter wheel mode (2WHEEL/3WHEEL): ").upper() or self.mode.upper()
+                        mode_param = f",MODE:{wheel_mode}"
+                    else:
+                        mode_param = ""
+
+                    use_accel = input(
+                        "Include acceleration setting? (y/n, default: n): ").lower() or "n"
+                    if use_accel == 'y':
+                        accel_value = input(
+                            "Enter acceleration (ON/OFF): ").upper() or self.accel.upper()
+                        accel_param = f",ACCEL:{accel_value}"
+                    else:
+                        accel_param = ""
+
+                    cmd = f"TAG:{tag_id},{distance},{direction}{mode_param}{accel_param}\r\n"
                     print(f"Sending TAG command: {cmd.strip()}")
                     ser.write(cmd.encode())
 
@@ -426,7 +474,9 @@ class MotorTester:
                     speed = input("Enter speed (default: 150): ") or "150"
                     cmd = f"TAG:0,{speed},{dir_code}\r\n"
                     print(f"Moving {dir_name} at speed {speed}...")
-                    ser.write(cmd.encode()) elif choice == '11':
+                    ser.write(cmd.encode())
+
+                elif choice == '11':
                     wheel_mode = input(
                         "Set wheel mode (2WHEEL/3WHEEL): ").upper()
                     if wheel_mode not in ['2WHEEL', '3WHEEL']:
@@ -480,12 +530,14 @@ def parse_args():
     parser.add_argument('--port', '-p', default=DEFAULT_PORT,
                         help=f'Serial port (default: {DEFAULT_PORT})')
     parser.add_argument('--baud', '-b', type=int, default=DEFAULT_BAUD_RATE,
-                        help=f'Baud rate (default: {DEFAULT_BAUD_RATE})')    parser.add_argument('--duration', '-d', type=float, default=DEFAULT_TEST_DURATION,
-                                                                                                 help=f'Duration for each test in seconds (default: {DEFAULT_TEST_DURATION})')
+                        help=f'Baud rate (default: {DEFAULT_BAUD_RATE})')
+    parser.add_argument('--duration', '-d', type=float, default=DEFAULT_TEST_DURATION,
+                        help=f'Duration for each test in seconds (default: {DEFAULT_TEST_DURATION})')
     parser.add_argument('--speed', '-s', type=float, default=DEFAULT_SPEED,
                         help=f'Motor speed (default: {DEFAULT_SPEED})')
     parser.add_argument('--test', '-t', choices=['all', 'left', 'right', 'back',
-                                                 'forward', 'backward', 'rotate', 'diagnostics'],
+                                                 'forward', 'backward', 'rotate', 'diagnostics',
+                                                 'diagonal'],
                         help='Which automated test to run (default: all)')
     parser.add_argument('--interactive', '-i', action='store_true',
                         help='Run in interactive mode for direct serial control')
@@ -532,6 +584,15 @@ def main():
             tester.move('CW', args.speed, args.duration)
             time.sleep(0.5)
             tester.move('CCW', args.speed, args.duration)
+        elif args.test == 'diagonal':
+            print("\n=== Testing diagonal movement ===")
+            tester.move('FWL', args.speed, args.duration)
+            time.sleep(0.5)
+            tester.move('FWR', args.speed, args.duration)
+            time.sleep(0.5)
+            tester.move('BWL', args.speed, args.duration)
+            time.sleep(0.5)
+            tester.move('BWR', args.speed, args.duration)
         elif args.test == 'diagnostics':
             tester.test_diagnostics()
     finally:
