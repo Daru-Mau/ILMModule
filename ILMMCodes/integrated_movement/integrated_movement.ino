@@ -249,6 +249,37 @@ void executeMovement(int direction, int speed) {
     }
 }
 
+// Add this function after the motor control functions but before setup()
+
+float readUltrasonicDistance(int trigPin, int echoPin) {
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+    
+    float duration = pulseIn(echoPin, HIGH);
+    return (duration * 0.0343) / 2.0;  // Convert to centimeters
+}
+
+void updateDistances() {
+    // Read all sensor distances
+    distFL = readUltrasonicDistance(TRIG_FL, ECHO_FL);
+    distF = readUltrasonicDistance(TRIG_F, ECHO_F);
+    distFR = readUltrasonicDistance(TRIG_FR, ECHO_FR);
+    distBL = readUltrasonicDistance(TRIG_BL, ECHO_BL);
+    distB = readUltrasonicDistance(TRIG_B, ECHO_B);
+    distBR = readUltrasonicDistance(TRIG_BR, ECHO_BR);
+
+    // Constrain readings to valid range
+    distFL = constrain(distFL, 1, 400);
+    distF = constrain(distF, 1, 400);
+    distFR = constrain(distFR, 1, 400);
+    distBL = constrain(distBL, 1, 400);
+    distB = constrain(distB, 1, 400);
+    distBR = constrain(distBR, 1, 400);
+}
+
 // Ring buffer for commands
 char cmdBuffer[COMMAND_BUFFER_SIZE];
 uint8_t bufferHead = 0;

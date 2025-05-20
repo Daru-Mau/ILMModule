@@ -95,8 +95,8 @@ class AprilTagUARTController:
     def __init__(self,
                  port: Optional[str] = None,
                  baud_rate: int = DEFAULT_BAUD_RATE,
-                 max_speed: int = 150,
-                 min_speed: int = 100,
+                 max_speed: int = 50,
+                 min_speed: int = 40,
                  verbose: bool = False,
                  charging_time: str = DEFAULT_CHARGING_TIME,
                  work_time: str = DEFAULT_WORK_TIME):

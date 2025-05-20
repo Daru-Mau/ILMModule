@@ -96,7 +96,7 @@ class UARTCommunicator:
             return False
 
         try:
-            self.serial.write(command.encode())
+            self.serial.write(command.encode('utf-8'))
             self.serial.flush()
             
             if self.debug:
