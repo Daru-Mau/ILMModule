@@ -12,13 +12,24 @@ import os
 import numpy as np
 import sys
 import signal
-from threading import Event
+import datetime
+from threading import Event, Timer
 import argparse
 from typing import Optional, Tuple, List
 import logging
 
 # Import the UART communication module
 from uart_communication import UARTCommunicator, TagData, DIR_FORWARD, DIR_BACKWARD, DIR_LEFT, DIR_RIGHT, DIR_STOP
+
+def direction_to_str(direction):
+    """Convert direction code to readable string"""
+    return {
+        DIR_FORWARD: "FORWARD",
+        DIR_BACKWARD: "BACKWARD", 
+        DIR_LEFT: "LEFT",
+        DIR_RIGHT: "RIGHT",
+        DIR_STOP: "STOP"
+    }.get(direction, "UNKNOWN")
 
 # Check if running on Raspberry Pi
 IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
@@ -62,6 +73,15 @@ DETECTION_INTERVAL = 0.1
 CENTER_TOLERANCE = 0.15
 DISTANCE_THRESHOLD = 30
 
+# Time-based task scheduling
+# Define tag IDs for special locations
+CHARGING_BASE_TAG_ID = 1  # Assume tag ID 1 is the charging base
+WORK_LOCATION_TAG_ID = 2  # Assume tag ID 2 is the work location
+
+# Default schedule times (can be overridden via command line)
+DEFAULT_CHARGING_TIME = "19:30"  # Robot goes to charging station at 7:30 PM
+DEFAULT_WORK_TIME = "09:00"      # Robot goes to work location at 9:00 AM
+
 # === Global state ===
 shutdown_event = Event()
 
@@ -77,7 +97,9 @@ class AprilTagUARTController:
                  baud_rate: int = DEFAULT_BAUD_RATE,
                  max_speed: int = 150,
                  min_speed: int = 100,
-                 verbose: bool = False):
+                 verbose: bool = False,
+                 charging_time: str = DEFAULT_CHARGING_TIME,
+                 work_time: str = DEFAULT_WORK_TIME):
         """Initialize the controller with communication parameters"""
         self.port = port
         self.baud_rate = baud_rate
@@ -88,6 +110,15 @@ class AprilTagUARTController:
         self.camera = None
         self.detector = None
         self.running = False
+
+        # Time-based scheduling attributes
+        self.charging_time = charging_time
+        self.work_time = work_time
+        self.scheduled_task_timer = None
+        self.current_target_tag_id = None
+        self.search_mode = False
+        self.search_pattern_index = 0
+        self.last_scheduled_check = 0
 
         if verbose:
             logger.setLevel(logging.DEBUG)
@@ -286,6 +317,9 @@ class AprilTagUARTController:
             logger.error("AprilTag detector not initialized")
             return
 
+        # Check for scheduled tasks
+        self.check_scheduled_tasks()
+
         # Preprocess the image
         gray = self.preprocess_image(frame)
 
@@ -297,7 +331,43 @@ class AprilTagUARTController:
             tag_size=TAG_SIZE_CM
         )
 
-        # If no detections, tell the robot to stop
+        # If in search mode for a specific tag
+        if self.search_mode and self.current_target_tag_id is not None:
+            # Check if our target tag is visible
+            matching_tags = [d for d in detections if d.tag_id == self.current_target_tag_id]
+            
+            if matching_tags:
+                # Found our target tag, exit search mode and go to it
+                target_detection = matching_tags[0]
+                self.search_mode = False
+                
+                # Cancel any pending search steps
+                if self.scheduled_task_timer:
+                    self.scheduled_task_timer.cancel()
+                    self.scheduled_task_timer = None
+                
+                # Determine direction and distance
+                direction, distance = self.get_direction(target_detection, frame.shape[1])
+                
+                # Create TagData object
+                tag_data = TagData(
+                    tag_id=target_detection.tag_id,
+                    distance=distance,
+                    direction=direction
+                )
+                
+                if self.verbose:
+                    logger.debug(f"Found scheduled target tag {self.current_target_tag_id}: {str(tag_data)}")
+                
+                # Send the tag data to control the robot
+                self.communicator.send_tag_data(tag_data)
+                return
+            elif not self.scheduled_task_timer or not self.scheduled_task_timer.is_alive():
+                # Target not found, continue search pattern
+                self.execute_search_pattern()
+                return
+
+        # Regular tag detection processing (when not in search mode)
         if not detections:
             if self.verbose:
                 logger.info("No tags detected")
@@ -382,6 +452,224 @@ class AprilTagUARTController:
 
         logger.info("Shutdown complete")
 
+    def schedule_task(self, tag_id: int, action: str, time_str: str):
+        """Schedule a task for the robot based on time and tag ID"""
+        # Convert time string to seconds since midnight
+        try:
+            target_time = datetime.datetime.strptime(
+                time_str, "%H:%M").time()
+            now = datetime.datetime.now()
+            scheduled_datetime = datetime.datetime.combine(now.date(), target_time)
+
+            # If the scheduled time is in the past, move to the next day
+            if scheduled_datetime < now:
+                scheduled_datetime += datetime.timedelta(days=1)
+
+            delay = (scheduled_datetime - now).total_seconds()
+
+            logger.info(f"Task scheduled: {action} at {time_str} (in {delay} seconds)")
+
+            # Cancel any existing timer
+            if self.scheduled_task_timer:
+                self.scheduled_task_timer.cancel()
+
+            # Schedule the task
+            self.scheduled_task_timer = Timer(delay, self.execute_scheduled_task, [tag_id, action])
+            self.scheduled_task_timer.start()
+
+        except Exception as e:
+            logger.error(f"Failed to schedule task: {e}")
+
+    def execute_scheduled_task(self, tag_id: int, action: str):
+        """Execute the scheduled task"""
+        logger.info(f"Executing scheduled task: {action} for tag {tag_id}")
+
+        if action == "charge":
+            self.go_to_charging_station()
+        elif action == "work":
+            self.go_to_work_location()
+        else:
+            logger.warning(f"Unknown action: {action}")
+
+    def go_to_charging_station(self):
+        """Navigate to the charging station"""
+        logger.info("Navigating to charging station...")
+        self.search_mode = True
+        self.current_target_tag_id = CHARGING_BASE_TAG_ID
+        self.search_pattern_index = 0
+
+    def go_to_work_location(self):
+        """Navigate to the work location"""
+        logger.info("Navigating to work location...")
+        self.search_mode = True
+        self.current_target_tag_id = WORK_LOCATION_TAG_ID
+        self.search_pattern_index = 0
+
+    def check_scheduled_tasks(self):
+        """Check if any scheduled tasks need to be executed based on current time"""
+        now = datetime.datetime.now()
+        current_time_str = now.strftime("%H:%M")
+        
+        # Only check once per minute to avoid constantly triggering
+        if time.time() - self.last_scheduled_check < 60:
+            return
+            
+        self.last_scheduled_check = time.time()
+        
+        # Log status every 15 minutes for debugging
+        if now.minute % 15 == 0 and now.second < 10:
+            self.log_schedule_status()
+        
+        # Check for charging time
+        if current_time_str == self.charging_time:
+            logger.info(f"Scheduled task: Time to go to charging station (Tag ID: {CHARGING_BASE_TAG_ID})")
+            self.start_scheduled_navigation(CHARGING_BASE_TAG_ID)
+            
+        # Check for work time
+        elif current_time_str == self.work_time:
+            logger.info(f"Scheduled task: Time to go to work location (Tag ID: {WORK_LOCATION_TAG_ID})")
+            self.start_scheduled_navigation(WORK_LOCATION_TAG_ID)
+            
+    def log_schedule_status(self):
+        """Log the current schedule status for debugging purposes"""
+        now = datetime.datetime.now()
+        now_time = now.time()
+        
+        # Parse schedule times
+        charging_time = datetime.datetime.strptime(self.charging_time, "%H:%M").time()
+        work_time = datetime.datetime.strptime(self.work_time, "%H:%M").time()
+        
+        # Calculate time until next tasks
+        charging_dt = datetime.datetime.combine(now.date(), charging_time)
+        if now_time > charging_time:
+            charging_dt += datetime.timedelta(days=1)
+            
+        work_dt = datetime.datetime.combine(now.date(), work_time)
+        if now_time > work_time:
+            work_dt += datetime.timedelta(days=1)
+            
+        time_to_charging = (charging_dt - now).total_seconds() / 3600  # hours
+        time_to_work = (work_dt - now).total_seconds() / 3600  # hours
+        
+        logger.info(f"Schedule status - Current time: {now_time.strftime('%H:%M')}")
+        logger.info(f"  - Charging time: {self.charging_time} (in {time_to_charging:.1f} hours)")
+        logger.info(f"  - Work time: {self.work_time} (in {time_to_work:.1f} hours)")
+    
+    def start_scheduled_navigation(self, target_tag_id):
+        """Start searching for a specific tag for scheduled navigation"""
+        self.current_target_tag_id = target_tag_id
+        self.search_mode = True
+        self.search_pattern_index = 0
+        logger.info(f"Starting search for Tag ID {target_tag_id}")
+    
+    def execute_search_pattern(self):
+        """Execute a search pattern to find the target tag if not immediately visible"""
+        # Simple search pattern: rotate in place to scan surroundings
+        search_patterns = [
+            (DIR_RIGHT, 5),   # Rotate right briefly
+            (DIR_STOP, 1),    # Stop to stabilize camera and detect
+            (DIR_RIGHT, 5),   # Rotate right more
+            (DIR_STOP, 1),    # Stop again
+            (DIR_RIGHT, 5),   # More rotation
+            (DIR_STOP, 1),
+            (DIR_LEFT, 20),   # Rotate left to cover a wider area
+            (DIR_STOP, 1),
+            (DIR_FORWARD, 5), # Move forward a bit
+            (DIR_STOP, 1),
+            (DIR_RIGHT, 10),  # Rotate right to scan new area
+            (DIR_STOP, 1),
+            (DIR_FORWARD, 10), # Move forward more
+            (DIR_STOP, 1),
+            (DIR_LEFT, 15),   # Rotate left to scan another area
+            (DIR_STOP, 1)
+        ]
+        
+        # If we've completed the pattern without finding the tag, reset and try again
+        if self.search_pattern_index >= len(search_patterns):
+            self.search_pattern_index = 0
+            logger.info("Search pattern complete, resetting...")
+            return
+            
+        # Get next search movement
+        direction, duration = search_patterns[self.search_pattern_index]
+        
+        # Create tag data for the search movement
+        tag_data = TagData(
+            tag_id=self.current_target_tag_id if self.current_target_tag_id else 0,
+            distance=100.0,  # Default distance for search movements
+            direction=direction
+        )
+        
+        logger.info(f"Search pattern step {self.search_pattern_index}: {direction_to_str(direction)}")
+        self.communicator.send_tag_data(tag_data)
+        
+        # Schedule next step in the search pattern after this step completes
+        self.search_pattern_index += 1
+        self.scheduled_task_timer = Timer(duration, self.continue_search_pattern)
+        self.scheduled_task_timer.start()
+        tag_data = TagData(
+            tag_id=99,  # Special ID for search movements
+            distance=float(self.max_speed),
+            direction=direction
+        )
+        
+        # Send movement command
+        self.communicator.send_tag_data(tag_data)
+        
+        # Schedule the next step after the specified duration
+        if self.scheduled_task_timer:
+            self.scheduled_task_timer.cancel()
+            
+        self.scheduled_task_timer = Timer(
+            duration, 
+            self._next_search_step
+        )
+        self.scheduled_task_timer.start()
+    
+    def _next_search_step(self):
+        """Helper method to advance to the next search step"""
+        self.search_pattern_index += 1
+        if self.search_mode and self.current_target_tag_id is not None:
+            self.execute_search_pattern()
+
+    def update(self):
+        """Update method to be called periodically"""
+        if not self.running:
+            return
+
+        # Check and execute scheduled tasks
+        self.check_scheduled_tasks()
+
+        # If in search mode, perform the search pattern
+        if self.search_mode:
+            self.perform_search_pattern()
+
+    def perform_search_pattern(self):
+        """Perform the search pattern to find the target tag"""
+        if self.current_target_tag_id is None:
+            return
+
+        # Implement a simple search pattern: square or circular
+        if self.search_pattern_index < 4:
+            # Move in a square pattern
+            direction = [DIR_FORWARD, DIR_RIGHT, DIR_BACKWARD, DIR_LEFT]
+            self.communicator.send_direction(direction[self.search_pattern_index])
+            time.sleep(1)
+            self.search_pattern_index += 1
+        else:
+            # Search pattern complete, stop and reset
+            self.communicator.send_stop()
+            self.search_mode = False
+            self.search_pattern_index = 0
+            logger.info("Search pattern complete")
+
+    def continue_search_pattern(self):
+        """Continue executing the search pattern after the timer expires"""
+        if self.search_mode and self.current_target_tag_id is not None:
+            self.execute_search_pattern()
+        else:
+            logger.info("Search mode exited, stopping search pattern")
+
 
 def signal_handler(sig, frame):
     """Handle shutdown signals"""
@@ -406,6 +694,10 @@ def main():
                         help='Maximum motor speed (50-255)')
     parser.add_argument('--min-speed', type=int, default=100,
                         help='Minimum motor speed (30-max_speed)')
+    parser.add_argument('--charging-time', type=str, default=DEFAULT_CHARGING_TIME,
+                        help=f'Time to go to charging station, format HH:MM (default: {DEFAULT_CHARGING_TIME})')
+    parser.add_argument('--work-time', type=str, default=DEFAULT_WORK_TIME,
+                        help=f'Time to go to work location, format HH:MM (default: {DEFAULT_WORK_TIME})')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose output')
     args = parser.parse_args()
@@ -416,7 +708,9 @@ def main():
         baud_rate=args.baud,
         max_speed=args.max_speed,
         min_speed=args.min_speed,
-        verbose=args.verbose
+        verbose=args.verbose,
+        charging_time=args.charging_time,
+        work_time=args.work_time
     )
 
     if controller.setup():

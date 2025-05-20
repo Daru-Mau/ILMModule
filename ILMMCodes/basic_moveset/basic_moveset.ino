@@ -114,30 +114,14 @@ void moveForward(int speed, bool use3Wheel)
     // Smooth acceleration for forward movement
     accelerateMotor(motorLeft, BACKWARD, speed);
     accelerateMotor(motorRight, FORWARD, speed);
-
-    if (use3Wheel)
-    {
-      accelerateMotor(motorBack, FORWARD, speed);
-    }
-    else
-    {
-      moveMotor(motorBack, STOP, 0);
-    }
+    moveMotor(motorBack, STOP, 0);
   }
   else
   {
     // Regular instant movement
     moveMotor(motorLeft, BACKWARD, speed);
     moveMotor(motorRight, FORWARD, speed);
-
-    if (use3Wheel)
-    {
-      moveMotor(motorBack, FORWARD, speed);
-    }
-    else
-    {
-      moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
-    }
+    moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
   }
 }
 
@@ -146,15 +130,8 @@ void moveBackward(int speed, bool use3Wheel)
 {
   moveMotor(motorLeft, FORWARD, speed);
   moveMotor(motorRight, BACKWARD, speed);
-
-  if (use3Wheel)
-  {
-    moveMotor(motorBack, BACKWARD, speed);
-  }
-  else
-  {
-    moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
-  }
+  moveMotor(motorBack, BACKWARD, speed);
+  moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
 }
 
 // Rotate left (counterclockwise)

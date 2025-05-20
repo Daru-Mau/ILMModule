@@ -19,8 +19,8 @@
 #define POSITION_TOLERANCE 5.0f   // mm
 #define ROTATION_TOLERANCE 0.05f  // radians
 // Changed from #define to global variables so they can be modified at runtime
-int MAX_SPEED = 150;  // Increased from 50 to overcome motor stall torque
-int MIN_SPEED = 100;  // Increased from 40 for more noticeable movement
+int MAX_SPEED = 50;  // Increased from 50 to overcome motor stall torque
+int MIN_SPEED = 40;  // Increased from 40 for more noticeable movement
 #define DEBUG_MODE true          // Set to true for verbose output, false for reduced output
 
 // Message framing characters for UART communication
@@ -864,8 +864,8 @@ void parseCommand(const char* cmd) {
         // Convert speed from distance to motor speed (integer)
         int motorSpeed = constrain((int)distance, MIN_SPEED, MAX_SPEED);
         
-        // Ensure speed is high enough to overcome stall torque
-        motorSpeed = max(motorSpeed, 150); // Force minimum of 150 for reliable movement
+        // Use the MIN_SPEED as configured (don't override with hardcoded value)
+        // motorSpeed = max(motorSpeed, 150); // Original line forced minimum of 150
         
         // Execute movement based on direction
         executeMovement(direction, motorSpeed, tagId);
