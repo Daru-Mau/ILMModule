@@ -33,9 +33,9 @@ except ImportError:
 DEFAULT_PORT = '/dev/ttyACM0'
 DEFAULT_BAUD_RATE = 115200
 DEFAULT_TEST_DURATION = 2.0  # seconds
-DEFAULT_SPEED = 150.0  # mm or arbitrary units
-DEFAULT_MODE = "3WHEEL"  # Use 3-wheel mode by default
-# Don't use acceleration by default (for backward compatibility)
+DEFAULT_SPEED = 50.0  # mm or arbitrary units
+DEFAULT_MODE = "2WHEEL"  # Use 3-wheel mode by default
+# Don't use acceleraton by default (for backward compatibility)
 DEFAULT_ACCEL = "OFF"
 
 
@@ -65,6 +65,10 @@ class MotorTester:
             print(
                 "Note: Arduino connected but not responding to ping. Continuing anyway.")
             # Don't set connected to False, just continue
+
+        # Set the wheel mode and acceleration
+        self._set_mode(self.mode)
+        self._set_accel(self.accel)
 
         print("Successfully connected to Arduino.")
         return True
@@ -304,7 +308,9 @@ class MotorTester:
             time.sleep(0.5)
 
         print("\n=== Motor Tests Completed ===")
-        return True def interactive_mode(self) -> None:
+        return True
+        
+    def interactive_mode(self) -> None:
         """Run an interactive serial control session"""
         if hasattr(self, 'arduino') and hasattr(self.arduino, 'serial') and self.arduino.serial:
             # We'll use the existing serial connection
@@ -426,7 +432,9 @@ class MotorTester:
                     speed = input("Enter speed (default: 150): ") or "150"
                     cmd = f"TAG:0,{speed},{dir_code}\r\n"
                     print(f"Moving {dir_name} at speed {speed}...")
-                    ser.write(cmd.encode()) elif choice == '11':
+                    ser.write(cmd.encode())
+                    
+                elif choice == '11':
                     wheel_mode = input(
                         "Set wheel mode (2WHEEL/3WHEEL): ").upper()
                     if wheel_mode not in ['2WHEEL', '3WHEEL']:
@@ -480,8 +488,9 @@ def parse_args():
     parser.add_argument('--port', '-p', default=DEFAULT_PORT,
                         help=f'Serial port (default: {DEFAULT_PORT})')
     parser.add_argument('--baud', '-b', type=int, default=DEFAULT_BAUD_RATE,
-                        help=f'Baud rate (default: {DEFAULT_BAUD_RATE})')    parser.add_argument('--duration', '-d', type=float, default=DEFAULT_TEST_DURATION,
-                                                                                                 help=f'Duration for each test in seconds (default: {DEFAULT_TEST_DURATION})')
+                        help=f'Baud rate (default: {DEFAULT_BAUD_RATE})')
+    parser.add_argument('--duration', '-d', type=float, default=DEFAULT_TEST_DURATION,
+                        help=f'Duration for each test in seconds (default: {DEFAULT_TEST_DURATION})')
     parser.add_argument('--speed', '-s', type=float, default=DEFAULT_SPEED,
                         help=f'Motor speed (default: {DEFAULT_SPEED})')
     parser.add_argument('--test', '-t', choices=['all', 'left', 'right', 'back',

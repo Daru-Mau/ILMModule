@@ -157,7 +157,8 @@ class ArduinoCommunicator:
         # Check for any response within timeout
         response = self._get_response(0.5)
         return len(response) > 0
-      def send_tag_data(self, tag_data: TagData) -> bool:
+    
+    def send_tag_data(self, tag_data: TagData) -> bool:
         """Send tag detection data to Arduino"""
         if not self.connected:
             return False
