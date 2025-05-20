@@ -130,7 +130,6 @@ void moveBackward(int speed, bool use3Wheel)
 {
   moveMotor(motorLeft, FORWARD, speed);
   moveMotor(motorRight, BACKWARD, speed);
-  moveMotor(motorBack, BACKWARD, speed);
   moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
 }
 

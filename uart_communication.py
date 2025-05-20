@@ -13,8 +13,8 @@ from typing import Optional, Dict, Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
-                   format='%(asctime)s [%(levelname)s] %(message)s',
-                   datefmt='%H:%M:%S')
+                    format='%(asctime)s [%(levelname)s] %(message)s',
+                    datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
 
 # UART Communication constants
@@ -37,6 +37,7 @@ DIR_RIGHT = 4
 DIR_ROTATE_LEFT = 5
 DIR_ROTATE_RIGHT = 6
 
+
 def get_direction_name(direction_code: int) -> str:
     """Convert direction code to readable string"""
     return {
@@ -48,6 +49,7 @@ def get_direction_name(direction_code: int) -> str:
         DIR_ROTATE_LEFT: "ROTATE LEFT",
         DIR_ROTATE_RIGHT: "ROTATE RIGHT"
     }.get(direction_code, "UNKNOWN")
+
 
 @dataclass
 class TagData:
@@ -66,6 +68,7 @@ class TagData:
         """String representation for debugging"""
         return f"Movement: Dir={get_direction_name(self.direction)}, Speed={self.speed}"
 
+
 class UARTCommunicator:
     def __init__(self, port: str = None, baud_rate: int = BAUD_RATE, debug: bool = False):
         """Initialize UART communication"""
@@ -75,7 +78,7 @@ class UARTCommunicator:
         self.connected = False
         self.debug = debug
         self.min_speed = 30  # Default minimum speed
-        self.max_speed = 255 # Default maximum speed
+        self.max_speed = 255  # Default maximum speed
 
     def connect(self) -> bool:
         """Establish serial connection with Arduino"""
@@ -104,10 +107,10 @@ class UARTCommunicator:
         try:
             self.serial.write(command.encode('utf-8'))
             self.serial.flush()
-            
+
             if self.debug:
                 logger.debug(f"Sent: {command}")
-            
+
             # Wait for acknowledgment
             response = self.serial.readline().decode().strip()
             if response.startswith('<ACK:'):
@@ -145,11 +148,11 @@ class UARTCommunicator:
         # Validate speed parameters
         max_speed = max(50, min(255, max_speed))
         min_speed = max(30, min(max_speed, min_speed))
-        
+
         # Store the values
         self.max_speed = max_speed
         self.min_speed = min_speed
-        
+
         # Send to Arduino
         command = f"{MSG_START}SPEED:{max_speed},{min_speed}{MSG_END}"
         return self._send_command(command)
@@ -162,4 +165,17 @@ class UARTCommunicator:
     def ping(self) -> bool:
         """Send ping command to check connection"""
         command = f"{MSG_START}PING{MSG_END}"
+        return self._send_command(command)
+
+    def set_wheel_mode(self, use_three_wheels: bool) -> bool:
+        """Set wheel configuration mode
+
+        Args:
+            use_three_wheels: True for 3-wheel mode, False for 2-wheel mode
+
+        Returns:
+            bool: True if command was successful, False otherwise
+        """
+        mode = 1 if use_three_wheels else 0
+        command = f"{MSG_START}MODE:{mode}{MSG_END}"
         return self._send_command(command)

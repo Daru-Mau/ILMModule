@@ -21,6 +21,7 @@ import logging
 # Import the UART communication module
 from uart_communication import UARTCommunicator, TagData, DIR_FORWARD, DIR_BACKWARD, DIR_LEFT, DIR_RIGHT, DIR_STOP, DIR_ROTATE_LEFT, DIR_ROTATE_RIGHT
 
+
 def direction_to_str(direction):
     """Convert direction code to readable string"""
     return {
@@ -32,6 +33,7 @@ def direction_to_str(direction):
         DIR_ROTATE_LEFT: "ROTATE LEFT",
         DIR_ROTATE_RIGHT: "ROTATE RIGHT"
     }.get(direction, "UNKNOWN")
+
 
 # Check if running on Raspberry Pi
 IS_RASPBERRY_PI = os.path.exists('/sys/firmware/devicetree/base/model')
@@ -101,7 +103,8 @@ class AprilTagUARTController:
                  min_speed: int = 40,
                  verbose: bool = False,
                  charging_time: str = DEFAULT_CHARGING_TIME,
-                 work_time: str = DEFAULT_WORK_TIME):
+                 work_time: str = DEFAULT_WORK_TIME,
+                 use_three_wheels: bool = False):
         """Initialize the controller with communication parameters"""
         self.port = port
         self.baud_rate = baud_rate
@@ -112,6 +115,7 @@ class AprilTagUARTController:
         self.camera = None
         self.detector = None
         self.running = False
+        self.use_three_wheels = use_three_wheels
 
         # Time-based scheduling attributes
         self.charging_time = charging_time
@@ -129,14 +133,15 @@ class AprilTagUARTController:
         """Calculate speed based on distance to target"""
         if distance_cm < DISTANCE_THRESHOLD:
             return 0  # Stop when too close
-        
+
         # Up to 2 meters away, scale speed linearly
         max_distance = 200  # cm
         speed_factor = min(distance_cm / max_distance, 1.0)
-        
+
         # Calculate speed as percentage of range between min and max
-        speed = int(self.min_speed + (self.max_speed - self.min_speed) * speed_factor)
-        
+        speed = int(self.min_speed + (self.max_speed -
+                    self.min_speed) * speed_factor)
+
         # Ensure speed doesn't exceed the max or go below the min
         return max(self.min_speed, min(self.max_speed, speed))
 
@@ -160,12 +165,15 @@ class AprilTagUARTController:
             if not self.communicator.connect():
                 logger.error(
                     "Failed to connect to Arduino. Check connections and try again.")
-                return False
-
-        # Set motor speed parameters
+                return False        # Set motor speed parameters
         logger.info(
             f"Setting motor speeds - MAX: {self.max_speed}, MIN: {self.min_speed}")
         self.communicator.set_speed(self.max_speed, self.min_speed)
+
+        # Configure wheel mode (2-wheel or 3-wheel)
+        logger.info(
+            f"Setting wheel mode: {'THREE_WHEEL' if self.use_three_wheels else 'TWO_WHEEL'}")
+        self.communicator.set_wheel_mode(self.use_three_wheels)
 
         # Initialize camera if on Raspberry Pi
         if IS_RASPBERRY_PI:
@@ -336,7 +344,8 @@ class AprilTagUARTController:
                 direction = DIR_FORWARD
 
         if self.verbose:
-            logger.debug(f"Distance: {distance_cm:.1f}cm, Direction: {direction_to_str(direction)}, Speed: {speed}")
+            logger.debug(
+                f"Distance: {distance_cm:.1f}cm, Direction: {direction_to_str(direction)}, Speed: {speed}")
 
         return direction, speed
 
@@ -357,11 +366,14 @@ class AprilTagUARTController:
 
         # Handle search mode
         if self.search_mode and self.current_target_tag_id is not None:
-            matching_tags = [d for d in detections if d.tag_id == self.current_target_tag_id]
+            matching_tags = [
+                d for d in detections if d.tag_id == self.current_target_tag_id]
             if matching_tags:
                 target_detection = matching_tags[0]
-                direction, speed = self.get_direction_and_speed(target_detection, frame.shape[1])
-                tag_data = TagData(tag_id=target_detection.tag_id, speed=speed, direction=direction)
+                direction, speed = self.get_direction_and_speed(
+                    target_detection, frame.shape[1])
+                tag_data = TagData(tag_id=target_detection.tag_id,
+                                   speed=speed, direction=direction)
                 self.communicator.send_tag_data(tag_data)
                 return
             elif not self.scheduled_task_timer or not self.scheduled_task_timer.is_alive():
@@ -376,9 +388,12 @@ class AprilTagUARTController:
             return
 
         # Find closest tag and process it
-        best_detection = max(detections, key=lambda d: self.estimate_tag_size(d.corners))
-        direction, speed = self.get_direction_and_speed(best_detection, frame.shape[1])
-        tag_data = TagData(tag_id=best_detection.tag_id, speed=speed, direction=direction)
+        best_detection = max(
+            detections, key=lambda d: self.estimate_tag_size(d.corners))
+        direction, speed = self.get_direction_and_speed(
+            best_detection, frame.shape[1])
+        tag_data = TagData(tag_id=best_detection.tag_id,
+                           speed=speed, direction=direction)
         self.communicator.send_tag_data(tag_data)
 
     def run(self):
@@ -445,7 +460,8 @@ class AprilTagUARTController:
             target_time = datetime.datetime.strptime(
                 time_str, "%H:%M").time()
             now = datetime.datetime.now()
-            scheduled_datetime = datetime.datetime.combine(now.date(), target_time)
+            scheduled_datetime = datetime.datetime.combine(
+                now.date(), target_time)
 
             # If the scheduled time is in the past, move to the next day
             if scheduled_datetime < now:
@@ -453,14 +469,16 @@ class AprilTagUARTController:
 
             delay = (scheduled_datetime - now).total_seconds()
 
-            logger.info(f"Task scheduled: {action} at {time_str} (in {delay} seconds)")
+            logger.info(
+                f"Task scheduled: {action} at {time_str} (in {delay} seconds)")
 
             # Cancel any existing timer
             if self.scheduled_task_timer:
                 self.scheduled_task_timer.cancel()
 
             # Schedule the task
-            self.scheduled_task_timer = Timer(delay, self.execute_scheduled_task, [tag_id, action])
+            self.scheduled_task_timer = Timer(
+                delay, self.execute_scheduled_task, [tag_id, action])
             self.scheduled_task_timer.start()
 
         except Exception as e:
@@ -495,59 +513,65 @@ class AprilTagUARTController:
         """Check if any scheduled tasks need to be executed based on current time"""
         now = datetime.datetime.now()
         current_time_str = now.strftime("%H:%M")
-        
+
         # Only check once per minute to avoid constantly triggering
         if time.time() - self.last_scheduled_check < 60:
             return
-            
+
         self.last_scheduled_check = time.time()
-        
+
         # Log status every 15 minutes for debugging
         if now.minute % 15 == 0 and now.second < 10:
             self.log_schedule_status()
-        
+
         # Check for charging time
         if current_time_str == self.charging_time:
-            logger.info(f"Scheduled task: Time to go to charging station (Tag ID: {CHARGING_BASE_TAG_ID})")
+            logger.info(
+                f"Scheduled task: Time to go to charging station (Tag ID: {CHARGING_BASE_TAG_ID})")
             self.start_scheduled_navigation(CHARGING_BASE_TAG_ID)
-            
+
         # Check for work time
         elif current_time_str == self.work_time:
-            logger.info(f"Scheduled task: Time to go to work location (Tag ID: {WORK_LOCATION_TAG_ID})")
+            logger.info(
+                f"Scheduled task: Time to go to work location (Tag ID: {WORK_LOCATION_TAG_ID})")
             self.start_scheduled_navigation(WORK_LOCATION_TAG_ID)
-            
+
     def log_schedule_status(self):
         """Log the current schedule status for debugging purposes"""
         now = datetime.datetime.now()
         now_time = now.time()
-        
+
         # Parse schedule times
-        charging_time = datetime.datetime.strptime(self.charging_time, "%H:%M").time()
+        charging_time = datetime.datetime.strptime(
+            self.charging_time, "%H:%M").time()
         work_time = datetime.datetime.strptime(self.work_time, "%H:%M").time()
-        
+
         # Calculate time until next tasks
         charging_dt = datetime.datetime.combine(now.date(), charging_time)
         if now_time > charging_time:
             charging_dt += datetime.timedelta(days=1)
-            
+
         work_dt = datetime.datetime.combine(now.date(), work_time)
         if now_time > work_time:
             work_dt += datetime.timedelta(days=1)
-            
+
         time_to_charging = (charging_dt - now).total_seconds() / 3600  # hours
         time_to_work = (work_dt - now).total_seconds() / 3600  # hours
-        
-        logger.info(f"Schedule status - Current time: {now_time.strftime('%H:%M')}")
-        logger.info(f"  - Charging time: {self.charging_time} (in {time_to_charging:.1f} hours)")
-        logger.info(f"  - Work time: {self.work_time} (in {time_to_work:.1f} hours)")
-    
+
+        logger.info(
+            f"Schedule status - Current time: {now_time.strftime('%H:%M')}")
+        logger.info(
+            f"  - Charging time: {self.charging_time} (in {time_to_charging:.1f} hours)")
+        logger.info(
+            f"  - Work time: {self.work_time} (in {time_to_work:.1f} hours)")
+
     def start_scheduled_navigation(self, target_tag_id):
         """Start searching for a specific tag for scheduled navigation"""
         self.current_target_tag_id = target_tag_id
         self.search_mode = True
         self.search_pattern_index = 0
         logger.info(f"Starting search for Tag ID {target_tag_id}")
-    
+
     def execute_search_pattern(self):
         """Execute a search pattern to find the target tag if not immediately visible"""
         # Simple search pattern: rotate in place to scan surroundings
@@ -560,58 +584,60 @@ class AprilTagUARTController:
             (DIR_STOP, 1),
             (DIR_LEFT, 20),   # Rotate left to cover a wider area
             (DIR_STOP, 1),
-            (DIR_FORWARD, 5), # Move forward a bit
+            (DIR_FORWARD, 5),  # Move forward a bit
             (DIR_STOP, 1),
             (DIR_RIGHT, 10),  # Rotate right to scan new area
             (DIR_STOP, 1),
-            (DIR_FORWARD, 10), # Move forward more
+            (DIR_FORWARD, 10),  # Move forward more
             (DIR_STOP, 1),
             (DIR_LEFT, 15),   # Rotate left to scan another area
             (DIR_STOP, 1)
         ]
-        
+
         # If we've completed the pattern without finding the tag, reset and try again
         if self.search_pattern_index >= len(search_patterns):
             self.search_pattern_index = 0
             logger.info("Search pattern complete, resetting...")
             return
-            
+
         # Get next search movement
         direction, duration = search_patterns[self.search_pattern_index]
-        
+
         # Create tag data for the search movement
         tag_data = TagData(
             tag_id=self.current_target_tag_id if self.current_target_tag_id else 0,
             distance=100.0,  # Default distance for search movements
             direction=direction
         )
-        
-        logger.info(f"Search pattern step {self.search_pattern_index}: {direction_to_str(direction)}")
+
+        logger.info(
+            f"Search pattern step {self.search_pattern_index}: {direction_to_str(direction)}")
         self.communicator.send_tag_data(tag_data)
-        
+
         # Schedule next step in the search pattern after this step completes
         self.search_pattern_index += 1
-        self.scheduled_task_timer = Timer(duration, self.continue_search_pattern)
+        self.scheduled_task_timer = Timer(
+            duration, self.continue_search_pattern)
         self.scheduled_task_timer.start()
         tag_data = TagData(
             tag_id=99,  # Special ID for search movements
             distance=float(self.max_speed),
             direction=direction
         )
-        
+
         # Send movement command
         self.communicator.send_tag_data(tag_data)
-        
+
         # Schedule the next step after the specified duration
         if self.scheduled_task_timer:
             self.scheduled_task_timer.cancel()
-            
+
         self.scheduled_task_timer = Timer(
-            duration, 
+            duration,
             self._next_search_step
         )
         self.scheduled_task_timer.start()
-    
+
     def _next_search_step(self):
         """Helper method to advance to the next search step"""
         self.search_pattern_index += 1
@@ -639,7 +665,8 @@ class AprilTagUARTController:
         if self.search_pattern_index < 4:
             # Move in a square pattern
             direction = [DIR_FORWARD, DIR_RIGHT, DIR_BACKWARD, DIR_LEFT]
-            self.communicator.send_direction(direction[self.search_pattern_index])
+            self.communicator.send_direction(
+                direction[self.search_pattern_index])
             time.sleep(1)
             self.search_pattern_index += 1
         else:
@@ -677,6 +704,8 @@ def main():
                         help=f'Time to go to charging station, format HH:MM (default: {DEFAULT_CHARGING_TIME})')
     parser.add_argument('--work-time', type=str, default=DEFAULT_WORK_TIME,
                         help=f'Time to go to work location, format HH:MM (default: {DEFAULT_WORK_TIME})')
+    parser.add_argument('--three-wheels', action='store_true',
+                        help='Use 3-wheel configuration for omnidirectional movement (default: 2-wheel)')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose output')
     args = parser.parse_args()
@@ -689,7 +718,8 @@ def main():
         min_speed=args.min_speed,
         verbose=args.verbose,
         charging_time=args.charging_time,
-        work_time=args.work_time
+        work_time=args.work_time,
+        use_three_wheels=args.three_wheels
     )
 
     if controller.setup():
