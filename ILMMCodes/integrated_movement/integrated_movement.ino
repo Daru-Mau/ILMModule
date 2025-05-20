@@ -119,26 +119,9 @@ unsigned long lastSensorUpdate = 0;
 const unsigned long TAG_TIMEOUT = 1000;  // 1 second timeout
 
 // === Globals ===
-float distFL, distF, distFR, distBL, distB, distBR;
-float currentSpeed = 0.0;
 bool emergencyStop = false;
 
-// Forward declarations for functions used by AprilTagController
-void stopAllMotors();
-void moveRobot(float vy, float vx, float omega);
-
-// AprilTag tracking states
-enum TrackingState
-{
-    IDLE,
-    MOVING_TO_TAG,
-    ALIGNING_WITH_TAG,
-    MAINTAINING_POSITION
-};
-
-// Motor structure
-struct Motor
-{
+struct Motor {
     int RPWM;
     int LPWM;
     int REN;
@@ -146,177 +129,15 @@ struct Motor
     float currentSpeed;
 };
 
-// Define motors
 Motor motorRight = {RPWM_RIGHT, LPWM_RIGHT, REN_RIGHT, LEN_RIGHT, 0};
 Motor motorLeft = {RPWM_LEFT, LPWM_LEFT, REN_LEFT, LEN_LEFT, 0};
 Motor motorBack = {RPWM_BACK, LPWM_BACK, REN_BACK, LEN_BACK, 0};
 
-enum Direction
-{
+enum Direction {
     FORWARD,
     BACKWARD,
     STOP
 };
-
-// ===== APRIL TAG CONTROLLER CLASS =====
-class AprilTagController {
-private:
-    TrackingState currentState;
-    bool tagVisible;
-    float targetX, targetY, targetYaw;
-    float currentX, currentY, currentYaw;
-    float integralError;
-    float lastError;
-    unsigned long lastPIDUpdate;
-    
-    // PID control for smooth movement
-    float calculatePID(float error) {
-        unsigned long now = millis();
-        float dt = (now - lastPIDUpdate) / 1000.0f;
-        lastPIDUpdate = now;
-        
-        integralError += error * dt;
-        integralError = constrain(integralError, -MAX_SPEED, MAX_SPEED);
-        
-        float derivative = (error - lastError) / dt;
-        lastError = error;
-        
-        return error * PID_KP + integralError * PID_KI + derivative * PID_KD;
-    }
-    
-    float calculateRotationSpeed(float error) {
-        return calculatePID(error);
-    }
-
-public:
-    AprilTagController() {
-        reset();
-    }
-    
-    void reset() {
-        currentState = IDLE;
-        tagVisible = false;
-        targetX = targetY = targetYaw = 0.0f;
-        currentX = currentY = currentYaw = 0.0f;
-        integralError = lastError = 0.0f;
-        lastPIDUpdate = millis();
-    }
-
-    bool isActive() {
-        return tagVisible && (millis() - lastTagUpdate <= TAG_TIMEOUT);
-    }
-
-    void updateTagData(float x, float y, float yaw) {
-        tagVisible = true;
-        targetX = x;
-        targetY = y;
-        targetYaw = yaw;
-        lastTagUpdate = millis();
-        
-        if (currentState == IDLE) {
-            currentState = MOVING_TO_TAG;
-        }
-    }
-
-    // Process April tag movement WITH obstacle awareness
-    void processMovement() {
-        if (!tagVisible || millis() - lastTagUpdate > TAG_TIMEOUT) {
-            safeRobotMove(0, 0, 0);  // Safe stop
-            currentState = IDLE;
-            return;
-        }
-
-        float distance = sqrt(sq(targetX - currentX) + sq(targetY - currentY));
-        float rotationError = targetYaw - currentYaw;
-        
-        // Normalize rotation error to [-π, π]
-        while (rotationError > PI) rotationError -= 2 * PI;
-        while (rotationError < -PI) rotationError += 2 * PI;
-
-        // Process movement based on current state
-        switch (currentState) {
-            case MOVING_TO_TAG: {
-                if (distance <= POSITION_TOLERANCE) {
-                    currentState = ALIGNING_WITH_TAG;
-                    break;
-                }
-                
-                // Calculate movement vector
-                float angle = atan2(targetY - currentY, targetX - currentX);
-                float vx = cos(angle) * constrain(distance * 0.5f, MIN_SPEED, MAX_SPEED);
-                float vy = sin(angle) * constrain(distance * 0.5f, MIN_SPEED, MAX_SPEED);
-                
-                safeRobotMove(vy, vx, calculateRotationSpeed(rotationError));
-                break;
-            }
-            
-            case ALIGNING_WITH_TAG: {
-                if (abs(rotationError) <= ROTATION_TOLERANCE) {
-                    currentState = MAINTAINING_POSITION;
-                    break;
-                }
-                safeRobotMove(0, 0, calculateRotationSpeed(rotationError));
-                break;
-            }
-            
-            case MAINTAINING_POSITION: {
-                if (distance > POSITION_TOLERANCE || abs(rotationError) > ROTATION_TOLERANCE) {
-                    currentState = MOVING_TO_TAG;
-                    break;
-                }
-                // Small corrections to maintain position
-                float vx = constrain(targetX - currentX, -MIN_SPEED, MIN_SPEED);
-                float vy = constrain(targetY - currentY, -MIN_SPEED, MIN_SPEED);
-                float vrot = constrain(calculateRotationSpeed(rotationError), -MIN_SPEED, MIN_SPEED);
-                safeRobotMove(vy, vx, vrot);
-                break;
-            }
-            
-            default:
-                safeRobotMove(0, 0, 0);
-                break;
-        }
-    }
-    
-    // A wrapper that ensures we check obstacles before moving
-    // This integrates the obstacle avoidance from fine_moveset
-    void safeRobotMove(float vy, float vx, float omega) {
-        // Check for emergency stop
-        if (emergencyStop) {
-            stopAllMotors();
-            return;
-        }
-        
-        // Adjust speed based on obstacles in our path
-        // Get minimum distance in movement direction
-        float forwardDist = min(min(distFL, distF), distFR);
-        float backwardDist = min(min(distBL, distB), distBR);
-        float leftDist = min(distFL, distBL);
-        float rightDist = min(distFR, distBR);
-        
-        // Check if we're trying to move toward an obstacle
-        if (vy > 0 && forwardDist < CRITICAL_DISTANCE) {
-            // Don't move forward into obstacle
-            vy = 0;
-        } else if (vy < 0 && backwardDist < CRITICAL_DISTANCE) {
-            // Don't move backward into obstacle
-            vy = 0;
-        }
-        
-        if (vx > 0 && rightDist < CRITICAL_DISTANCE) {
-            // Don't move right into obstacle
-            vx = 0;
-        } else if (vx < 0 && leftDist < CRITICAL_DISTANCE) {
-            // Don't move left into obstacle
-            vx = 0;
-        }
-        
-        // After safety checks, move robot
-        moveRobot(vy, vx, omega);
-    }
-};
-
-// === Motor Control Functions ===
 
 // Setup motor pins
 void setupMotorPins(Motor &motor) {
@@ -328,31 +149,15 @@ void setupMotorPins(Motor &motor) {
     digitalWrite(motor.LEN, HIGH);
 }
 
-// Calculate dynamic speed based on obstacle distance
-float calculateDynamicSpeed(float distance, float targetSpeed) {
-    if (distance <= CRITICAL_DISTANCE) {
-        return 0; // Emergency stop
-    } else if (distance <= SLOW_DOWN_DISTANCE) {
-        // Linear interpolation between MIN_SPEED and targetSpeed
-        float factor = (distance - CRITICAL_DISTANCE) / (SLOW_DOWN_DISTANCE - CRITICAL_DISTANCE);
-        return MIN_SPEED + (targetSpeed - MIN_SPEED) * factor;
-    }
-    return targetSpeed;
-}
-
 // Move a single motor
 void moveMotor(Motor &motor, Direction dir, float targetSpeed) {
     targetSpeed = constrain(targetSpeed, 0, MAX_SPEED);
-
-    // Smooth acceleration/deceleration
     if (targetSpeed > motor.currentSpeed) {
         motor.currentSpeed = min(targetSpeed, motor.currentSpeed + MAX_SPEED * ACCEL_RATE);
     } else if (targetSpeed < motor.currentSpeed) {
         motor.currentSpeed = max(targetSpeed, motor.currentSpeed - MAX_SPEED * ACCEL_RATE);
     }
-
     int speed = (int)motor.currentSpeed;
-
     switch (dir) {
         case FORWARD:
             analogWrite(motor.RPWM, speed);
@@ -370,171 +175,130 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed) {
     }
 }
 
-// Main robot movement function 
-void moveRobot(float vy, float vx, float omega) {
-    // Scale inputs to motor speeds
-    int speedScale = MAX_SPEED;
-    
-    // Calculate magnitudes and constrain to valid ranges
-    vy = constrain(vy, -1.0, 1.0);
-    vx = constrain(vx, -1.0, 1.0);
-    omega = constrain(omega, -1.0, 1.0);
-    
-    // Calculate motor speeds based on holonomic drive equations
-    // For a three-wheeled omnidirectional robot
-    
-    // For a typical triangular arrangement (120° spacing)
-    float leftSpeed = -0.5 * vx - 0.866 * vy + omega;   // sin(120°) = 0.866
-    float rightSpeed = -0.5 * vx + 0.866 * vy + omega;  // sin(240°) = -0.866
-    float backSpeed = vx + omega;                       // sin(0°) = 0
-    
-    // Scale speeds to fit within [-1, 1]
-    float maxSpeed = max(abs(leftSpeed), max(abs(rightSpeed), abs(backSpeed)));
-    if (maxSpeed > 1.0) {
-        leftSpeed /= maxSpeed;
-        rightSpeed /= maxSpeed;
-        backSpeed /= maxSpeed;
-    }
-    
-    // Apply deadband to avoid small noisy movements
-    const float DEADBAND = 0.1;
-    leftSpeed = (abs(leftSpeed) < DEADBAND) ? 0 : leftSpeed;
-    rightSpeed = (abs(rightSpeed) < DEADBAND) ? 0 : rightSpeed;
-    backSpeed = (abs(backSpeed) < DEADBAND) ? 0 : backSpeed;
-    
-    // Calculate speeds based on obstacle proximity
-    float forwardDist = min(min(distFL, distF), distFR);
-    float backwardDist = min(min(distBL, distB), distBR);
-    float leftDist = min(distFL, distBL);
-    float rightDist = min(distFR, distBR);
-    
-    // Calculate dynamic speeds based on obstacles
-    int leftPWM = abs(leftSpeed) * speedScale;
-    int rightPWM = abs(rightSpeed) * speedScale;
-    int backPWM = abs(backSpeed) * speedScale;
-    
-    // Adjust speeds based on obstacle proximity and motor contribution to movement
-    // Left motor: positive = forward-left movement, negative = backward-right movement
-    if (leftSpeed > 0) {
-        // When left motor is positive, it contributes to forward-left movement
-        leftPWM = calculateDynamicSpeed(min(forwardDist, leftDist), leftPWM);
-    } else if (leftSpeed < 0) {
-        // When left motor is negative, it contributes to backward-right movement
-        leftPWM = calculateDynamicSpeed(min(backwardDist, rightDist), leftPWM);
-    }
-    
-    // Right motor: positive = forward-right movement, negative = backward-left movement
-    if (rightSpeed > 0) {
-        // When right motor is positive, it contributes to forward-right movement
-        rightPWM = calculateDynamicSpeed(min(forwardDist, rightDist), rightPWM);
-    } else if (rightSpeed < 0) {
-        // When right motor is negative, it contributes to backward-left movement
-        rightPWM = calculateDynamicSpeed(min(backwardDist, leftDist), rightPWM);
-    }
-    
-    // Back motor: positive = right movement, negative = left movement
-    if (backSpeed > 0) {
-        // When back motor is positive, it contributes to rightward movement
-        backPWM = calculateDynamicSpeed(rightDist, backPWM);
-    } else if (backSpeed < 0) {
-        // When back motor is negative, it contributes to leftward movement
-        backPWM = calculateDynamicSpeed(leftDist, backPWM);
-    }
-    
-    // Apply direction based on sign
-    Direction leftDir = (leftSpeed >= 0) ? FORWARD : BACKWARD;
-    Direction rightDir = (rightSpeed >= 0) ? FORWARD : BACKWARD;
-    Direction backDir = (backSpeed >= 0) ? FORWARD : BACKWARD;
-    
-    // Send commands to motors
-    moveMotor(motorLeft, leftDir, leftPWM);
-    moveMotor(motorRight, rightDir, rightPWM);
-    moveMotor(motorBack, backDir, backPWM);
-}
-
-// Stop all motors
 void stopAllMotors() {
     moveMotor(motorLeft, STOP, 0);
     moveMotor(motorRight, STOP, 0);
     moveMotor(motorBack, STOP, 0);
 }
 
-// Read distance from ultrasonic sensor
-float readDistance(int trigPin, int echoPin) {
-    digitalWrite(trigPin, LOW);
-    delayMicroseconds(2);
-    digitalWrite(trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigPin, LOW);
-
-    long duration = pulseIn(echoPin, HIGH, 30000);
-    return (duration <= 0) ? 999.0 : duration * 0.034 / 2.0;
+// Dynamic speed calculation based on obstacle distance
+float calculateDynamicSpeed(float distance, float targetSpeed) {
+    if (distance <= CRITICAL_DISTANCE) {
+        return 0; // Emergency stop
+    } else if (distance <= SLOW_DOWN_DISTANCE) {
+        float factor = (distance - CRITICAL_DISTANCE) / (SLOW_DOWN_DISTANCE - CRITICAL_DISTANCE);
+        return MIN_SPEED + (targetSpeed - MIN_SPEED) * factor;
+    }
+    return targetSpeed;
 }
 
-// Update all sensor distance readings
-void updateDistances() {
-    distFL = readDistance(TRIG_FL, ECHO_FL);
-    distF = readDistance(TRIG_F, ECHO_F);
-    distFR = readDistance(TRIG_FR, ECHO_FR);
-    distBL = readDistance(TRIG_BL, ECHO_BL);
-    distB = readDistance(TRIG_B, ECHO_B);
-    distBR = readDistance(TRIG_BR, ECHO_BR);
+// Execute movement with obstacle avoidance
+void executeMovement(int direction, int speed) {
+    // Read distances
+    float forwardDist = min(min(distFL, distF), distFR);
+    float backwardDist = min(min(distBL, distB), distBR);
+    float leftDist = min(distFL, distBL);
+    float rightDist = min(distFR, distBR);
 
-    // Check for emergency stop condition
-    emergencyStop = (distF < CRITICAL_DISTANCE || distFL < CRITICAL_DISTANCE ||
-                   distFR < CRITICAL_DISTANCE || distB < CRITICAL_DISTANCE ||
-                   distBL < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
-                   
-    if (emergencyStop) {
-        Serial.println("EMERGENCY STOP - OBSTACLE DETECTED");
+    // Obstacle avoidance: if too close, stop or override
+    if (direction == 1 && forwardDist < CRITICAL_DISTANCE) { // FORWARD
+        stopAllMotors();
+        return;
+    } else if (direction == 2 && backwardDist < CRITICAL_DISTANCE) { // BACKWARD
+        stopAllMotors();
+        return;
+    } else if (direction == 3 && leftDist < CRITICAL_DISTANCE) { // LEFT
+        stopAllMotors();
+        return;
+    } else if (direction == 4 && rightDist < CRITICAL_DISTANCE) { // RIGHT
+        stopAllMotors();
+        return;
+    }
+
+    // Dynamic speed adjustment
+    if (direction == 1) speed = calculateDynamicSpeed(forwardDist, speed);
+    else if (direction == 2) speed = calculateDynamicSpeed(backwardDist, speed);
+    else if (direction == 3) speed = calculateDynamicSpeed(leftDist, speed);
+    else if (direction == 4) speed = calculateDynamicSpeed(rightDist, speed);
+
+    switch (direction) {
+        case 1: // FORWARD
+            moveMotor(motorLeft, FORWARD, speed);
+            moveMotor(motorRight, FORWARD, speed);
+            moveMotor(motorBack, STOP, 0);
+            break;
+        case 2: // BACKWARD
+            moveMotor(motorLeft, BACKWARD, speed);
+            moveMotor(motorRight, BACKWARD, speed);
+            moveMotor(motorBack, STOP, 0);
+            break;
+        case 3: // LEFT
+            moveMotor(motorLeft, BACKWARD, speed);
+            moveMotor(motorRight, FORWARD, speed);
+            moveMotor(motorBack, FORWARD, speed);
+            break;
+        case 4: // RIGHT
+            moveMotor(motorLeft, FORWARD, speed);
+            moveMotor(motorRight, BACKWARD, speed);
+            moveMotor(motorBack, BACKWARD, speed);
+            break;
+        case 0: // STOP
+        default:
+            stopAllMotors();
+            break;
     }
 }
 
+// Ring buffer for commands
+char cmdBuffer[COMMAND_BUFFER_SIZE];
+uint8_t bufferHead = 0;
+uint8_t bufferTail = 0;
+
+// Timing variables
+unsigned long lastControlLoop = 0;
+unsigned long lastSensorUpdate = 0;
+const unsigned long TAG_TIMEOUT = 1000;  // 1 second timeout
+
+// === Globals ===
+float distFL, distF, distFR, distBL, distB, distBR;
+bool emergencyStop = false;
+
 // Global controller instance
-AprilTagController tagController;
 
 // === SETUP AND LOOP FUNCTIONS ===
 
 void setup() {
-    // Clear any existing serial data and reset connection
-    Serial.end();
-    delay(100);
-    
-    // Initialize serial with higher baud rate
-    Serial.begin(SERIAL_BAUD_RATE);
-    delay(500);  // Give serial time to initialize
-    
-    // Clear any pending data
-    while(Serial.available()) {
-        Serial.read();
-    }
-    
-    // Setup motors
+    // 1. Hardware Initialization First
+    // Setup motors 
     setupMotorPins(motorLeft);
     setupMotorPins(motorRight);
     setupMotorPins(motorBack);
     
-    // Setup sensor pins
+    // Setup ultrasonic sensors
     int trigPins[] = {TRIG_FL, TRIG_F, TRIG_FR, TRIG_BL, TRIG_B, TRIG_BR};
     int echoPins[] = {ECHO_FL, ECHO_F, ECHO_FR, ECHO_BL, ECHO_B, ECHO_BR};
-    
     for (int i = 0; i < 6; i++) {
         pinMode(trigPins[i], OUTPUT);
         pinMode(echoPins[i], INPUT);
+        digitalWrite(trigPins[i], LOW); // Ensure clean start
     }
+
+    // 2. Serial Communication Setup
+    Serial.begin(115200); // Start serial FIRST without resetting
+    delay(100); // Short stabilization delay
     
-    Serial.println(F("\n=================================="));
-    Serial.println(F("Integrated Movement Controller v1.1"));
-    Serial.println(F("April Tag tracking with obstacle avoidance"));
-    Serial.println(F("Commands: TAG:id,distance,direction | TEST | STOP | PING | SPEED:max_speed,min_speed"));
-    Serial.println(F("Direction codes: 0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT"));
-    Serial.println(F("=================================="));
-    
-    // Test motors with a quick pulse to confirm they're working
+    // 3. Clear garbage data (critical for Raspberry Pi)
+    while (Serial.available()) {
+        Serial.read(); // Flush any noise
+    }
+
+    // 5. Motor Test (optional)
     if (DEBUG_MODE) {
-        Serial.println(F("Testing motors..."));
-        testMotors();
+        testMotors(); // Brief motor pulse test
+        Serial.println("Motor test complete");
     }
+
+    Serial.println("READY"); // Vital ready signal
 }
 
 // Quick motor test function
@@ -758,7 +522,7 @@ void parseCommand(const char* cmd) {
     // Check for STOP/CLEAR commands
     if (strcmp(command, "STOP") == 0 || strcmp(command, "CLEAR") == 0) {
         // Stop robot and reset controller
-        tagController.reset();
+        // tagController.reset();
         stopAllMotors();
         Serial.println("<ACK:STOP>");
         return;
@@ -812,7 +576,7 @@ void parseCommand(const char* cmd) {
     // Handle MOVE command
     if (strcmp(command, "MOVE") == 0) {
         // Command format: MOVE:direction[,speed]
-        int direction, speed = 150; // Default speed
+        int direction, speed = 50; // Default speed
         
         // Parse parameters
         if (sscanf(params, "%d,%d", &direction, &speed) < 1) {
@@ -827,21 +591,22 @@ void parseCommand(const char* cmd) {
         }
         
         // Execute movement
-        executeMovement(direction, speed, 0);
+        executeMovement(direction, speed);
         Serial.println("<ACK:MOVE>");
         return;
     }
     
-    // Handle TAG command
-    if (strcmp(command, "TAG") == 0) {
-        // Format: TAG:id,distance,direction
-        int tagId = 0;
-        float distance = 0.0f;
+    // Handle TAG or MOV command (both use same simplified format)
+    if (strcmp(command, "TAG") == 0 || strcmp(command, "MOV") == 0) {
+        // Format: TAG:direction,speed or MOV:direction,speed
         int direction = 0;
+        int speed = 0;
         
         // Parse parameters
-        if (sscanf(params, "%d,%f,%d", &tagId, &distance, &direction) != 3) {
-            Serial.println("<ERR:Invalid TAG format>");
+        if (sscanf(params, "%d,%d", &direction, &speed) != 2) {
+            Serial.print("<ERR:Invalid ");
+            Serial.print(command);
+            Serial.println(" format>");
             return;
         }
         
@@ -851,25 +616,21 @@ void parseCommand(const char* cmd) {
             return;
         }
         
+        // Constrain speed to valid range
+        speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+        
         if (DEBUG_MODE) {
-            Serial.print("Processing TAG Command: ");
-            Serial.print("Tag ID: ");
-            Serial.print(tagId);
-            Serial.print(", Distance: ");
-            Serial.print(distance);
-            Serial.print(", Direction: ");
-            Serial.println(direction);
+            Serial.print("Processing movement command: Direction=");
+            Serial.print(direction);
+            Serial.print(", Speed=");
+            Serial.println(speed);
         }
         
-        // Convert speed from distance to motor speed (integer)
-        int motorSpeed = constrain((int)distance, MIN_SPEED, MAX_SPEED);
-        
-        // Use the MIN_SPEED as configured (don't override with hardcoded value)
-        // motorSpeed = max(motorSpeed, 150); // Original line forced minimum of 150
-        
-        // Execute movement based on direction
-        executeMovement(direction, motorSpeed, tagId);
-        Serial.println("<ACK:TAG>");
+        // Execute movement based on direction and speed
+        executeMovement(direction, speed);
+        Serial.print("<ACK:");
+        Serial.print(command);
+        Serial.println(">");
         return;
     }
     
@@ -919,7 +680,7 @@ void parseCommand(const char* cmd) {
     Serial.println(">");
 }
 
-void executeMovement(int direction, int speed, int tagId) {
+void executeMovement(int direction, int speed) {
     // For tag_id=99, we're doing rotation
     // For tag_id=0, we're doing regular movement
     bool isRotation = (tagId == 99);

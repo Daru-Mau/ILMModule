@@ -123,6 +123,21 @@ class AprilTagUARTController:
         if verbose:
             logger.setLevel(logging.DEBUG)
 
+    def calculate_dynamic_speed(self, distance_cm: float, base_speed: int) -> int:
+        """Calculate speed based on distance to target"""
+        if distance_cm < DISTANCE_THRESHOLD:
+            return 0  # Stop when too close
+        
+        # Up to 2 meters away, scale speed linearly
+        max_distance = 200  # cm
+        speed_factor = min(distance_cm / max_distance, 1.0)
+        
+        # Calculate speed as percentage of range between min and max
+        speed = int(self.min_speed + (self.max_speed - self.min_speed) * speed_factor)
+        
+        # Ensure speed doesn't exceed the max or go below the min
+        return max(self.min_speed, min(self.max_speed, speed))
+
     def setup(self) -> bool:
         """
         Initialize hardware and communication
@@ -289,8 +304,8 @@ class AprilTagUARTController:
         else:
             return distance_cm * 0.98
 
-    def get_direction(self, detection, frame_width):
-        """Determine movement direction based on tag position and size"""
+    def get_direction_and_speed(self, detection, frame_width):
+        """Determine movement direction and speed based on tag position and size"""
         center_x = detection.center[0]
         tag_size_px = self.estimate_tag_size(detection.corners)
         distance_cm = self.calculate_distance(tag_size_px)
@@ -299,17 +314,29 @@ class AprilTagUARTController:
         frame_center = frame_width / 2
         tolerance = frame_width * CENTER_TOLERANCE
 
-        # Determine direction based on tag position and distance
-        # Direction codes: 0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT
-        if distance_cm < DISTANCE_THRESHOLD:
-            return DIR_STOP, distance_cm  # Stop when close enough
+        # Calculate speed based on distance
+        speed = self.calculate_dynamic_speed(distance_cm, self.max_speed)
 
-        if center_x < frame_center - tolerance:
-            return DIR_LEFT, distance_cm  # Turn left
-        elif center_x > frame_center + tolerance:
-            return DIR_RIGHT, distance_cm  # Turn right
+        # Determine direction
+        if distance_cm < DISTANCE_THRESHOLD:
+            direction = DIR_STOP
+            speed = 0
         else:
-            return DIR_FORWARD, distance_cm  # Move forward
+            if center_x < frame_center - tolerance:
+                direction = DIR_LEFT
+                # Reduce speed for turning
+                speed = max(self.min_speed, int(speed * 0.7))
+            elif center_x > frame_center + tolerance:
+                direction = DIR_RIGHT
+                # Reduce speed for turning
+                speed = max(self.min_speed, int(speed * 0.7))
+            else:
+                direction = DIR_FORWARD
+
+        if self.verbose:
+            logger.debug(f"Distance: {distance_cm:.1f}cm, Direction: {direction_to_str(direction)}, Speed: {speed}")
+
+        return direction, speed
 
     def process_frame(self, frame):
         """Process a single frame to detect AprilTags and control robot"""
@@ -317,13 +344,8 @@ class AprilTagUARTController:
             logger.error("AprilTag detector not initialized")
             return
 
-        # Check for scheduled tasks
-        self.check_scheduled_tasks()
-
-        # Preprocess the image
+        # Preprocess image and detect tags
         gray = self.preprocess_image(frame)
-
-        # Detect AprilTags
         detections = self.detector.detect(
             gray,
             estimate_tag_pose=True,
@@ -331,68 +353,30 @@ class AprilTagUARTController:
             tag_size=TAG_SIZE_CM
         )
 
-        # If in search mode for a specific tag
+        # Handle search mode
         if self.search_mode and self.current_target_tag_id is not None:
-            # Check if our target tag is visible
             matching_tags = [d for d in detections if d.tag_id == self.current_target_tag_id]
-            
             if matching_tags:
-                # Found our target tag, exit search mode and go to it
                 target_detection = matching_tags[0]
-                self.search_mode = False
-                
-                # Cancel any pending search steps
-                if self.scheduled_task_timer:
-                    self.scheduled_task_timer.cancel()
-                    self.scheduled_task_timer = None
-                
-                # Determine direction and distance
-                direction, distance = self.get_direction(target_detection, frame.shape[1])
-                
-                # Create TagData object
-                tag_data = TagData(
-                    tag_id=target_detection.tag_id,
-                    distance=distance,
-                    direction=direction
-                )
-                
-                if self.verbose:
-                    logger.debug(f"Found scheduled target tag {self.current_target_tag_id}: {str(tag_data)}")
-                
-                # Send the tag data to control the robot
+                direction, speed = self.get_direction_and_speed(target_detection, frame.shape[1])
+                tag_data = TagData(tag_id=target_detection.tag_id, distance=speed, direction=direction)
                 self.communicator.send_tag_data(tag_data)
                 return
             elif not self.scheduled_task_timer or not self.scheduled_task_timer.is_alive():
-                # Target not found, continue search pattern
                 self.execute_search_pattern()
                 return
 
-        # Regular tag detection processing (when not in search mode)
+        # Regular tag detection processing
         if not detections:
             if self.verbose:
                 logger.info("No tags detected")
             self.communicator.send_stop()
             return
 
-        # Find the best detection (largest tag, which is closest)
-        best_detection = max(
-            detections, key=lambda d: self.estimate_tag_size(d.corners))
-
-        # Determine direction and distance
-        direction, distance = self.get_direction(
-            best_detection, frame.shape[1])
-
-        # Create TagData object
-        tag_data = TagData(
-            tag_id=best_detection.tag_id,
-            distance=distance,
-            direction=direction
-        )
-
-        if self.verbose:
-            logger.debug(f"Detected {str(tag_data)}")
-
-        # Send the tag data to control the robot
+        # Find closest tag and process it
+        best_detection = max(detections, key=lambda d: self.estimate_tag_size(d.corners))
+        direction, speed = self.get_direction_and_speed(best_detection, frame.shape[1])
+        tag_data = TagData(tag_id=best_detection.tag_id, distance=speed, direction=direction)
         self.communicator.send_tag_data(tag_data)
 
     def run(self):
@@ -662,13 +646,6 @@ class AprilTagUARTController:
             self.search_mode = False
             self.search_pattern_index = 0
             logger.info("Search pattern complete")
-
-    def continue_search_pattern(self):
-        """Continue executing the search pattern after the timer expires"""
-        if self.search_mode and self.current_target_tag_id is not None:
-            self.execute_search_pattern()
-        else:
-            logger.info("Search mode exited, stopping search pattern")
 
 
 def signal_handler(sig, frame):
