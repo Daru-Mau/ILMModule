@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # UART Communication constants
 BAUD_RATE = 115200
-DEFAULT_UART_PORT = '/dev/ttyUSB0'
+DEFAULT_UART_PORT = '/dev/ttyACM0'  # Default port for Raspberry Pi 4
 MSG_START = '<'
 MSG_END = '>'
 CMD_MOVE = 'MOV'
@@ -34,6 +34,8 @@ DIR_FORWARD = 1
 DIR_BACKWARD = 2
 DIR_LEFT = 3
 DIR_RIGHT = 4
+DIR_ROTATE_LEFT = 5
+DIR_ROTATE_RIGHT = 6
 
 def get_direction_name(direction_code: int) -> str:
     """Convert direction code to readable string"""
@@ -42,7 +44,9 @@ def get_direction_name(direction_code: int) -> str:
         DIR_FORWARD: "FORWARD",
         DIR_BACKWARD: "BACKWARD",
         DIR_LEFT: "LEFT",
-        DIR_RIGHT: "RIGHT"
+        DIR_RIGHT: "RIGHT",
+        DIR_ROTATE_LEFT: "ROTATE LEFT",
+        DIR_ROTATE_RIGHT: "ROTATE RIGHT"
     }.get(direction_code, "UNKNOWN")
 
 @dataclass
@@ -50,6 +54,8 @@ class TagData:
     """Container for movement data from tag tracking"""
     direction: int
     speed: int
+    tag_id: int
+    distance: float = None
     timestamp: float = None
 
     def __post_init__(self):

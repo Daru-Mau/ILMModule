@@ -1,11 +1,12 @@
 /*
  * Integrated Movement Controller
  * 
- * This sketch combines:
- * 1. AprilTag movement tracking from apriltag_movement.ino
- * 2. Obstacle detection and avoidance from fine_moveset.ino
+ * This sketch focuses on:
+ * 1. UART communication with Raspberry Pi
+ * 2. Motor control for omni-directional movement
+ * 3. Obstacle detection and avoidance using ultrasonic sensors
  * 
- * The robot can follow AprilTags while avoiding obstacles using ultrasonic sensors
+ * Note: All AprilTag processing is handled by the Raspberry Pi
  */
 
 #include <Arduino.h>
@@ -16,8 +17,6 @@
 #define SERIAL_BAUD_RATE 115200  // Increased baud rate
 #define COMMAND_BUFFER_SIZE 64
 #define CONTROL_LOOP_INTERVAL 50  // 20Hz control loop
-#define POSITION_TOLERANCE 5.0f   // mm
-#define ROTATION_TOLERANCE 0.05f  // radians
 // Changed from #define to global variables so they can be modified at runtime
 int MAX_SPEED = 50;  // Increased from 50 to overcome motor stall torque
 int MIN_SPEED = 40;  // Increased from 40 for more noticeable movement
@@ -116,10 +115,12 @@ uint8_t bufferTail = 0;
 unsigned long lastControlLoop = 0;
 unsigned long lastTagUpdate = 0;
 unsigned long lastSensorUpdate = 0;
-const unsigned long TAG_TIMEOUT = 1000;  // 1 second timeout
+const unsigned long COMMAND_TIMEOUT = 1000;  // 1 second timeout
 
 // === Globals ===
 bool emergencyStop = false;
+float distFL, distF, distFR, distBL, distB, distBR;
+int movementMode = 0;  // 0=Normal, 1=Rotation
 
 struct Motor {
     int RPWM;
@@ -223,34 +224,41 @@ void executeMovement(int direction, int speed) {
 
     switch (direction) {
         case 1: // FORWARD
+            if (DEBUG_MODE) Serial.println("Moving FORWARD");
             moveMotor(motorLeft, FORWARD, speed);
             moveMotor(motorRight, FORWARD, speed);
             moveMotor(motorBack, STOP, 0);
             break;
         case 2: // BACKWARD
+            if (DEBUG_MODE) Serial.println("Moving BACKWARD");
             moveMotor(motorLeft, BACKWARD, speed);
             moveMotor(motorRight, BACKWARD, speed);
             moveMotor(motorBack, STOP, 0);
             break;
         case 3: // LEFT
+            if (DEBUG_MODE) Serial.println("Moving LEFT");
             moveMotor(motorLeft, BACKWARD, speed);
             moveMotor(motorRight, FORWARD, speed);
             moveMotor(motorBack, FORWARD, speed);
             break;
         case 4: // RIGHT
+            if (DEBUG_MODE) Serial.println("Moving RIGHT");
             moveMotor(motorLeft, FORWARD, speed);
             moveMotor(motorRight, BACKWARD, speed);
             moveMotor(motorBack, BACKWARD, speed);
             break;
         case 0: // STOP
+            if (DEBUG_MODE) Serial.println("Stopping all motors");
+            stopAllMotors();
+            break;
         default:
+            if (DEBUG_MODE) Serial.println("Unknown direction code");
             stopAllMotors();
             break;
     }
 }
 
-// Add this function after the motor control functions but before setup()
-
+// Function to read distance from an ultrasonic sensor
 float readUltrasonicDistance(int trigPin, int echoPin) {
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
@@ -279,20 +287,6 @@ void updateDistances() {
     distB = constrain(distB, 1, 400);
     distBR = constrain(distBR, 1, 400);
 }
-
-// Ring buffer for commands
-char cmdBuffer[COMMAND_BUFFER_SIZE];
-uint8_t bufferHead = 0;
-uint8_t bufferTail = 0;
-
-// Timing variables
-unsigned long lastControlLoop = 0;
-unsigned long lastSensorUpdate = 0;
-const unsigned long TAG_TIMEOUT = 1000;  // 1 second timeout
-
-// === Globals ===
-float distFL, distF, distFR, distBL, distB, distBR;
-bool emergencyStop = false;
 
 // Global controller instance
 
@@ -389,24 +383,22 @@ void loop() {
             
             // Print current state information
             Serial.print("State: ");
-            if (tagController.isActive()) {
-                Serial.println("TAG TRACKING ACTIVE");
+            if (emergencyStop) {
+                Serial.println("EMERGENCY STOP");
             } else {
-                Serial.println("IDLE - Waiting for commands");
+                Serial.println("ACTIVE - Waiting for commands");
             }
             
             lastPrintTime = now;
         }
     }
     
-    // Run tag controller at fixed intervals
+    // Check for emergency stop condition at fixed intervals
     if (now - lastControlLoop >= CONTROL_LOOP_INTERVAL) {
         lastControlLoop = now;
         
         if (emergencyStop) {
             stopAllMotors();
-        } else {
-            tagController.processMovement();
         }
     }
 }
@@ -709,75 +701,4 @@ void parseCommand(const char* cmd) {
     Serial.print("<ERR:Unknown command: ");
     Serial.print(command);
     Serial.println(">");
-}
-
-void executeMovement(int direction, int speed) {
-    // For tag_id=99, we're doing rotation
-    // For tag_id=0, we're doing regular movement
-    bool isRotation = (tagId == 99);
-    
-    // Direction mapping:
-    // 0 = STOP
-    // 1 = FORWARD
-    // 2 = BACKWARD
-    // 3 = LEFT
-    // 4 = RIGHT
-    
-    switch (direction) {
-        case 1: // FORWARD
-            if (!isRotation) {
-                if (DEBUG_MODE) Serial.println("Moving FORWARD");
-                moveMotor(motorLeft, FORWARD, speed);
-                moveMotor(motorRight, FORWARD, speed);
-                moveMotor(motorBack, STOP, 0);
-            }
-            break;
-            
-        case 2: // BACKWARD
-            if (!isRotation) {
-                if (DEBUG_MODE) Serial.println("Moving BACKWARD");
-                moveMotor(motorLeft, BACKWARD, speed);
-                moveMotor(motorRight, BACKWARD, speed);
-                moveMotor(motorBack, STOP, 0);
-            }
-            break;
-            
-        case 3: // LEFT
-            if (isRotation) {
-                if (DEBUG_MODE) Serial.println("Rotating COUNTERCLOCKWISE");
-                moveMotor(motorLeft, BACKWARD, speed);
-                moveMotor(motorRight, FORWARD, speed);
-                moveMotor(motorBack, FORWARD, speed);
-            } else {
-                if (DEBUG_MODE) Serial.println("Moving LEFT");
-                moveMotor(motorLeft, BACKWARD, speed);
-                moveMotor(motorRight, FORWARD, speed);
-                moveMotor(motorBack, FORWARD, speed);
-            }
-            break;
-            
-        case 4: // RIGHT
-            if (isRotation) {
-                if (DEBUG_MODE) Serial.println("Rotating CLOCKWISE");
-                moveMotor(motorLeft, FORWARD, speed);
-                moveMotor(motorRight, BACKWARD, speed);
-                moveMotor(motorBack, BACKWARD, speed);
-            } else {
-                if (DEBUG_MODE) Serial.println("Moving RIGHT");
-                moveMotor(motorLeft, FORWARD, speed);
-                moveMotor(motorRight, BACKWARD, speed);
-                moveMotor(motorBack, BACKWARD, speed);
-            }
-            break;
-            
-        case 0: // STOP
-            if (DEBUG_MODE) Serial.println("Stopping all motors");
-            stopAllMotors();
-            break;
-            
-        default:
-            if (DEBUG_MODE) Serial.println("Unknown direction code");
-            stopAllMotors();
-            break;
-    }
 }

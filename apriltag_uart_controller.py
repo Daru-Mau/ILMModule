@@ -359,7 +359,7 @@ class AprilTagUARTController:
             if matching_tags:
                 target_detection = matching_tags[0]
                 direction, speed = self.get_direction_and_speed(target_detection, frame.shape[1])
-                tag_data = TagData(tag_id=target_detection.tag_id, distance=speed, direction=direction)
+                tag_data = TagData(tag_id=target_detection.tag_id, speed=speed, direction=direction)
                 self.communicator.send_tag_data(tag_data)
                 return
             elif not self.scheduled_task_timer or not self.scheduled_task_timer.is_alive():
@@ -376,7 +376,7 @@ class AprilTagUARTController:
         # Find closest tag and process it
         best_detection = max(detections, key=lambda d: self.estimate_tag_size(d.corners))
         direction, speed = self.get_direction_and_speed(best_detection, frame.shape[1])
-        tag_data = TagData(tag_id=best_detection.tag_id, distance=speed, direction=direction)
+        tag_data = TagData(tag_id=best_detection.tag_id, speed=speed, direction=direction)
         self.communicator.send_tag_data(tag_data)
 
     def run(self):
