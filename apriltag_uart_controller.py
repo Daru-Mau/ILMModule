@@ -19,16 +19,18 @@ from typing import Optional, Tuple, List
 import logging
 
 # Import the UART communication module
-from uart_communication import UARTCommunicator, TagData, DIR_FORWARD, DIR_BACKWARD, DIR_LEFT, DIR_RIGHT, DIR_STOP
+from uart_communication import UARTCommunicator, TagData, DIR_FORWARD, DIR_BACKWARD, DIR_LEFT, DIR_RIGHT, DIR_STOP, DIR_ROTATE_LEFT, DIR_ROTATE_RIGHT
 
 def direction_to_str(direction):
     """Convert direction code to readable string"""
     return {
+        DIR_STOP: "STOP",
         DIR_FORWARD: "FORWARD",
-        DIR_BACKWARD: "BACKWARD", 
+        DIR_BACKWARD: "BACKWARD",
         DIR_LEFT: "LEFT",
         DIR_RIGHT: "RIGHT",
-        DIR_STOP: "STOP"
+        DIR_ROTATE_LEFT: "ROTATE LEFT",
+        DIR_ROTATE_RIGHT: "ROTATE RIGHT"
     }.get(direction, "UNKNOWN")
 
 # Check if running on Raspberry Pi
