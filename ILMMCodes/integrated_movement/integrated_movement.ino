@@ -13,6 +13,12 @@
 #include <Wire.h>
 #include <math.h>
 
+// === I2C Configuration ===
+#define I2C_SLAVE_ADDRESS 0x08  // Slave address for this Arduino
+#define I2C_MASTER_OVERRIDE_PIN 13  // Digital pin that master can use to override
+bool masterOverrideActive = false;  // Flag to indicate if master override is active
+bool prevMasterOverrideState = false; // To detect changes in override state
+
 // === Performance Settings ===
 #define SERIAL_BAUD_RATE 115200
 #define COMMAND_BUFFER_SIZE 64
@@ -223,6 +229,10 @@ void stopAllMotors()
     moveMotor(motorLeft, STOP, 0);
     moveMotor(motorRight, STOP, 0);
     moveMotor(motorBack, STOP, 0);
+    
+    if (masterOverrideActive && DEBUG_MODE) {
+        Serial.println("<STOPPED:MASTER_OVERRIDE>");
+    }
 }
 
 // Modified dynamic speed calculation to prioritize commanded speed
@@ -295,6 +305,14 @@ void rotateRight(int speed = MIN_SPEED)
 
 void executeMovement(int direction, int speed)
 {
+    // Check if master override is active - don't execute movement if so
+    if (masterOverrideActive) {
+        if (DEBUG_MODE) {
+            Serial.println("<MOVEMENT_BLOCKED:MASTER_OVERRIDE>");
+        }
+        return;
+    }
+    
     // Make sure all motor enable pins are HIGH
     ensureMotorEnablePins();
     
@@ -489,6 +507,78 @@ float filterReading(float prevValue, float newValue) {
     return newValue; // Accept new reading
 }
 
+// === I2C Functions ===
+
+// Function called when data is received from the master
+void receiveEvent(int howMany) {
+    if (Wire.available()) {
+        char command = Wire.read();
+        
+        // Process command from master
+        switch (command) {
+            case 'S': // Stop/Suspend operations
+                masterOverrideActive = true;
+                stopAllMotors(); // Immediately stop all motors
+                if (DEBUG_MODE) {
+                    Serial.println("<I2C:OVERRIDE_ACTIVE>");
+                }
+                break;
+                
+            case 'R': // Resume operations
+                masterOverrideActive = false;
+                if (DEBUG_MODE) {
+                    Serial.println("<I2C:OVERRIDE_RELEASED>");
+                }
+                break;
+                
+            default:
+                // Unknown command
+                if (DEBUG_MODE) {
+                    Serial.print("<I2C:UNKNOWN_CMD:");
+                    Serial.print(command);
+                    Serial.println(">");
+                }
+                break;
+        }
+    }
+}
+
+// Function to handle master's request for data
+void requestEvent() {
+    // Send current status to master when requested
+    if (masterOverrideActive) {
+        Wire.write('S'); // Suspended
+    } else if (emergencyStop) {
+        Wire.write('E'); // Emergency stop
+    } else {
+        Wire.write('A'); // Active
+    }
+}
+
+// Function to check if override pin is active (alternative to I2C communication)
+void checkOverridePin() {
+    bool currentState = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == HIGH);
+    
+    // Detect changes in override state
+    if (currentState != prevMasterOverrideState) {
+        if (currentState) {
+            // Pin went high - activate override
+            masterOverrideActive = true;
+            stopAllMotors();
+            if (DEBUG_MODE) {
+                Serial.println("<PIN:OVERRIDE_ACTIVE>");
+            }
+        } else {
+            // Pin went low - release override
+            masterOverrideActive = false;
+            if (DEBUG_MODE) {
+                Serial.println("<PIN:OVERRIDE_RELEASED>");
+            }
+        }
+        prevMasterOverrideState = currentState;
+    }
+}
+
 // Global controller instance
 
 // === SETUP AND LOOP FUNCTIONS ===
@@ -503,6 +593,16 @@ void setup()
     
     // Make sure enable pins are set properly
     ensureMotorEnablePins();
+    
+    // Setup I2C as slave
+    Wire.begin(I2C_SLAVE_ADDRESS);
+    Wire.onReceive(receiveEvent);
+    Wire.onRequest(requestEvent);
+    
+    // Setup override pin
+    pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT);
+    prevMasterOverrideState = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == HIGH);
+    masterOverrideActive = prevMasterOverrideState;
     
     // 2. Serial Communication Setup
     Serial.begin(115200); // Start serial after pin initialization
@@ -606,6 +706,21 @@ void testMotors()
 
 void loop()
 {
+    // Check if master override is active (via pin)
+    checkOverridePin();
+    
+    // If master override is active, only process I2C but not serial or motor commands
+    if (masterOverrideActive) {
+        // Only report status periodically if in debug mode
+        unsigned long now = millis();
+        static unsigned long lastOverrideStatus = 0;
+        if (DEBUG_MODE && (now - lastOverrideStatus > 5000)) {
+            Serial.println("<MASTER_OVERRIDE_ACTIVE>");
+            lastOverrideStatus = now;
+        }
+        return; // Skip the rest of the loop function
+    }
+    
     // Process serial commands
     while (Serial.available() > 0)
     {
@@ -949,6 +1064,16 @@ void parseCommand(const char *cmd)
         {
             Serial.println("<ERR:Invalid MODE param>");
         }
+        return;
+    }
+    
+    // Handle I2C status command
+    if (strcmp(command, "I2C") == 0)
+    {
+        // Report I2C status
+        Serial.print("<ACK:I2C:");
+        Serial.print(masterOverrideActive ? "OVERRIDE_ACTIVE" : "NORMAL");
+        Serial.println(">");
         return;
     }
 
