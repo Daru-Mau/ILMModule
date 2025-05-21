@@ -114,23 +114,49 @@ void moveForward(int speed, bool use3Wheel)
     // Smooth acceleration for forward movement
     accelerateMotor(motorLeft, BACKWARD, speed);
     accelerateMotor(motorRight, FORWARD, speed);
-    moveMotor(motorBack, STOP, 0);
+    if (use3Wheel) {
+      accelerateMotor(motorBack, FORWARD, speed);
+    } else {
+      moveMotor(motorBack, STOP, 0);
+    }
   }
   else
   {
     // Regular instant movement
     moveMotor(motorLeft, BACKWARD, speed);
     moveMotor(motorRight, FORWARD, speed);
-    moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+    if (use3Wheel) {
+      moveMotor(motorBack, FORWARD, speed);
+    } else {
+      moveMotor(motorBack, STOP, 0);
+    }
   }
 }
 
-// Backward movement
 void moveBackward(int speed, bool use3Wheel)
 {
-  moveMotor(motorLeft, FORWARD, speed);
-  moveMotor(motorRight, BACKWARD, speed);
-  moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+  if (useSmoothAccel)
+  {
+    // Smooth acceleration for backward movement
+    accelerateMotor(motorLeft, FORWARD, speed);
+    accelerateMotor(motorRight, BACKWARD, speed);
+    if (use3Wheel) {
+      accelerateMotor(motorBack, BACKWARD, speed);
+    } else {
+      moveMotor(motorBack, STOP, 0);
+    }
+  }
+  else
+  {
+    // Regular instant movement
+    moveMotor(motorLeft, FORWARD, speed);
+    moveMotor(motorRight, BACKWARD, speed);
+    if (use3Wheel) {
+      moveMotor(motorBack, BACKWARD, speed);
+    } else {
+      moveMotor(motorBack, STOP, 0);
+    }
+  }
 }
 
 // Rotate left (counterclockwise)
@@ -141,7 +167,7 @@ void rotateLeft(int speed, bool use3Wheel)
     // In 3-wheel mode, all wheels contribute to rotation
     moveMotor(motorLeft, FORWARD, speed);
     moveMotor(motorRight, FORWARD, speed);
-    moveMotor(motorBack, FORWARD, speed);
+    moveMotor(motorBack, BACKWARD, speed);
   }
   else
   {
@@ -160,7 +186,7 @@ void rotateRight(int speed, bool use3Wheel)
     // In 3-wheel mode, all wheels contribute to rotation
     moveMotor(motorLeft, BACKWARD, speed);
     moveMotor(motorRight, BACKWARD, speed);
-    moveMotor(motorBack, BACKWARD, speed);
+    moveMotor(motorBack, FORWARD, speed);
   }
   else
   {
@@ -170,37 +196,36 @@ void rotateRight(int speed, bool use3Wheel)
     moveMotor(motorBack, STOP, 0);
   }
 }
-
-// Slide left (strafe)
+// Slide left (strafe) - Updated with integrated movement logic
 void slideLeft(int speed, bool use3Wheel)
 {
   if (use3Wheel)
   {
-    // Only possible in 3-wheel omnidirectional mode
-    moveMotor(motorLeft, FORWARD, speed);
+    // Three-wheel configuration for lateral movement
+    moveMotor(motorLeft, STOP, 0);
     moveMotor(motorRight, BACKWARD, speed);
-    moveMotor(motorBack, FORWARD, speed * 1.5); // Back wheel does more work in strafing
+    moveMotor(motorBack, FORWARD, speed);
   }
   else
   {
-    // Fall back to rotation in 2-wheel mode
+    // In 2-wheel mode, fall back to rotation
     rotateLeft(speed, false);
   }
 }
 
-// Slide right (strafe)
+// Slide right (strafe) - Updated with integrated movement logic
 void slideRight(int speed, bool use3Wheel)
 {
   if (use3Wheel)
   {
-    // Only possible in 3-wheel omnidirectional mode
+    // Three-wheel configuration for lateral movement
     moveMotor(motorLeft, BACKWARD, speed);
-    moveMotor(motorRight, FORWARD, speed);
-    moveMotor(motorBack, BACKWARD, speed * 1.5); // Back wheel does more work in strafing
+    moveMotor(motorRight, STOP, 0);
+    moveMotor(motorBack, BACKWARD, speed);
   }
   else
   {
-    // Fall back to rotation in 2-wheel mode
+    // In 2-wheel mode, fall back to rotation
     rotateRight(speed, false);
   }
 }
@@ -319,6 +344,24 @@ void moveDiagonalBackwardRight(int speed, bool use3Wheel)
   }
 }
 
+/* // Dynamic speed calculation based on obstacle distance
+float calculateDynamicSpeed(float distance, float targetSpeed)
+{
+  const float CRITICAL_DISTANCE = 15.0;  // Emergency stop distance (cm)
+  const float SLOW_DOWN_DISTANCE = 30.0; // Start slowing down distance (cm)
+  
+  if (distance <= CRITICAL_DISTANCE)
+  {
+    return 0; // Emergency stop
+  }
+  else if (distance <= SLOW_DOWN_DISTANCE)
+  {
+    float factor = (distance - CRITICAL_DISTANCE) / (SLOW_DOWN_DISTANCE - CRITICAL_DISTANCE);
+    return MIN_SPEED + (targetSpeed - MIN_SPEED) * factor;
+  }
+  return targetSpeed;
+} */
+
 void processSerialInput()
 {
   while (Serial.available())
@@ -411,26 +454,47 @@ void parseCommand(const char *cmd)
     return;
   }
 
-  // Check for MODE command (2-wheel vs 3-wheel)
-  if (strncmp(cmd, "MODE:", 5) == 0)
-  {
-    if (strcmp(cmd + 5, "3WHEEL") == 0)
-    {
-      use3WheelMode = true;
-      Serial.println("Switched to 3-wheel mode (all wheels active)");
-    }
-    else if (strcmp(cmd + 5, "2WHEEL") == 0)
-    {
-      use3WheelMode = false;
-      Serial.println("Switched to 2-wheel mode (back wheel disabled)");
-    }
-    else
-    {
-      Serial.print("Current mode: ");
-      Serial.println(use3WheelMode ? "3-wheel (all wheels active)" : "2-wheel (back wheel disabled)");
-    }
-    return;
+// Check for MODE command (2-wheel vs 3-wheel)
+if (strncmp(cmd, "MODE:", 5) == 0)
+{
+  // Get the mode part and trim any whitespace
+  char modeStr[10] = {0};
+  strncpy(modeStr, cmd + 5, 9);
+  
+  // Convert to uppercase for comparison
+  for (int i = 0; modeStr[i]; i++) {
+    modeStr[i] = toupper(modeStr[i]);
   }
+  
+  // Strip any spaces or control characters
+  char cleanMode[10] = {0};
+  int j = 0;
+  for (int i = 0; modeStr[i]; i++) {
+    if (modeStr[i] >= 'A' && modeStr[i] <= 'Z' || modeStr[i] >= '0' && modeStr[i] <= '9') {
+      cleanMode[j++] = modeStr[i];
+    }
+  }
+  
+  // Handle both formats: "3WHEEL" and "1" (for 3-wheel mode)
+  if (strcmp(cleanMode, "3WHEEL") == 0 || strcmp(cleanMode, "1") == 0)
+  {
+    use3WheelMode = true;
+    Serial.println("Switched to 3-wheel mode (all wheels active)");
+  }
+  // Handle both formats: "2WHEEL" and "0" (for 2-wheel mode)
+  else if (strcmp(cleanMode, "2WHEEL") == 0 || strcmp(cleanMode, "0") == 0)
+  {
+    use3WheelMode = false;
+    Serial.println("Switched to 2-wheel mode (back wheel disabled)");
+  }
+  else
+  {
+    Serial.print("Current mode: ");
+    Serial.println(use3WheelMode ? "3-wheel (all wheels active)" : "2-wheel (back wheel disabled)");
+    Serial.println("Invalid mode format. Use MODE:2WHEEL, MODE:3WHEEL, MODE:0, or MODE:1");
+  }
+  return;
+}
 
   // Check for SPEED command
   if (strncmp(cmd, "SPEED:", 6) == 0)
