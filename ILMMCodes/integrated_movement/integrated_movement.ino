@@ -18,8 +18,8 @@
 #define COMMAND_BUFFER_SIZE 64
 #define CONTROL_LOOP_INTERVAL 50 // 20Hz control loop
 // Changed from #define to global variables so they can be modified at runtime
-int MAX_SPEED = 50;
-int MIN_SPEED = 40;
+int MAX_SPEED = 100;
+int MIN_SPEED = 50;
 #define DEBUG_MODE false // Keep this false to prevent debug messages interfering with UART communication
 // Message framing characters for UART communication
 const char START_MARKER = '<';
@@ -159,9 +159,28 @@ void setupMotorPins(Motor &motor)
     digitalWrite(motor.LEN, HIGH);
 }
 
+// Function to ensure all motor enable pins are set to HIGH
+void ensureMotorEnablePins() {
+    // Left motor
+    digitalWrite(motorLeft.REN, HIGH);
+    digitalWrite(motorLeft.LEN, HIGH);
+    
+    // Right motor
+    digitalWrite(motorRight.REN, HIGH);
+    digitalWrite(motorRight.LEN, HIGH);
+    
+    // Back motor
+    digitalWrite(motorBack.REN, HIGH);
+    digitalWrite(motorBack.LEN, HIGH);
+}
+
 // Move a single motor
 void moveMotor(Motor &motor, Direction dir, float targetSpeed)
 {
+    // Always ensure enable pins are HIGH before sending motor commands
+    digitalWrite(motor.REN, HIGH);
+    digitalWrite(motor.LEN, HIGH);
+    
     targetSpeed = constrain(targetSpeed, 0, MAX_SPEED);
     if (targetSpeed > motor.currentSpeed)
     {
@@ -172,6 +191,15 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
         motor.currentSpeed = max(targetSpeed, motor.currentSpeed - MAX_SPEED * ACCEL_RATE);
     }
     int speed = (int)motor.currentSpeed;
+    
+    // Debug output for left motor operations
+    if (&motor == &motorLeft && DEBUG_MODE) {
+        Serial.print("Left motor command: Dir=");
+        Serial.print(dir);
+        Serial.print(" Speed=");
+        Serial.println(speed);
+    }
+    
     switch (dir)
     {
     case FORWARD:
@@ -197,18 +225,26 @@ void stopAllMotors()
     moveMotor(motorBack, STOP, 0);
 }
 
-// Dynamic speed calculation based on obstacle distance
+// Modified dynamic speed calculation to prioritize commanded speed
 float calculateDynamicSpeed(float distance, float targetSpeed)
 {
+    // Emergency stop for critical distances only
     if (distance <= CRITICAL_DISTANCE)
     {
         return 0; // Emergency stop
     }
+    // For slow down range, apply a gentler reduction that doesn't override commanded speed as much
     else if (distance <= SLOW_DOWN_DISTANCE)
     {
-        float factor = (distance - CRITICAL_DISTANCE) / (SLOW_DOWN_DISTANCE - CRITICAL_DISTANCE);
-        return MIN_SPEED + (targetSpeed - MIN_SPEED) * factor;
+        // Calculate reduction factor (0.5-1.0) based on how close to critical distance
+        float reductionFactor = 0.5 + (0.5 * (distance - CRITICAL_DISTANCE) / (SLOW_DOWN_DISTANCE - CRITICAL_DISTANCE));
+        
+        // Apply reduction but ensure we never go below MIN_SPEED
+        float reducedSpeed = targetSpeed * reductionFactor;
+        return max(MIN_SPEED, reducedSpeed);
     }
+    
+    // Outside of slow down range, use commanded speed directly
     return targetSpeed;
 }
 
@@ -257,78 +293,60 @@ void rotateRight(int speed = MIN_SPEED)
     }
 }
 
-// Execute movement with obstacle avoidance
 void executeMovement(int direction, int speed)
 {
+    // Make sure all motor enable pins are HIGH
+    ensureMotorEnablePins();
+    
     // Read distances
     float forwardDist = min(min(distFL, distF), distFR);
     float backwardDist = min(min(distBL, distB), distBR);
     float leftDist = min(distFL, distBL);
     float rightDist = min(distFR, distBR);
 
-    // Obstacle avoidance: if too close, stop or override
-    if (direction == 1 && forwardDist < CRITICAL_DISTANCE)
-    { // FORWARD
-        stopAllMotors();
-        return;
-    }
-    else if (direction == 2 && backwardDist < CRITICAL_DISTANCE)
-    { // BACKWARD
-        stopAllMotors();
-        return;
-    }
-    else if (direction == 3 && leftDist < CRITICAL_DISTANCE)
-    { // LEFT
-        stopAllMotors();
-        return;
-    }
-    else if (direction == 4 && rightDist < CRITICAL_DISTANCE)
-    { // RIGHT
-        stopAllMotors();
-        return;
-    }
-    else if (direction == 5 && leftDist < CRITICAL_DISTANCE)
-    { // ROTATE LEFT
-        stopAllMotors();
-        return;
-    }
-    else if (direction == 6 && rightDist < CRITICAL_DISTANCE)
-    { // ROTATE RIGHT
+    // Only stop for critical obstacle proximity - simplify to just check relevant direction
+    if ((direction == 1 && forwardDist < CRITICAL_DISTANCE) ||
+        (direction == 2 && backwardDist < CRITICAL_DISTANCE) ||
+        (direction == 3 && leftDist < CRITICAL_DISTANCE) ||
+        (direction == 4 && rightDist < CRITICAL_DISTANCE) ||
+        (direction == 5 && leftDist < CRITICAL_DISTANCE) ||
+        (direction == 6 && rightDist < CRITICAL_DISTANCE))
+    {
         stopAllMotors();
         return;
     }
 
-    // Dynamic speed adjustment
-    if (direction == 1)
+    // Only apply dynamic speed adjustment for really close obstacles
+    // Otherwise, let the Raspberry Pi control the speed directly
+    if (direction == 1 && forwardDist < SLOW_DOWN_DISTANCE)
         speed = calculateDynamicSpeed(forwardDist, speed);
-    else if (direction == 2)
+    else if (direction == 2 && backwardDist < SLOW_DOWN_DISTANCE)
         speed = calculateDynamicSpeed(backwardDist, speed);
-    else if (direction == 3)
+    else if (direction == 3 && leftDist < SLOW_DOWN_DISTANCE)
         speed = calculateDynamicSpeed(leftDist, speed);
-    else if (direction == 4)
+    else if (direction == 4 && rightDist < SLOW_DOWN_DISTANCE)
         speed = calculateDynamicSpeed(rightDist, speed);
-    else if (direction == 5)
+    else if (direction == 5 && leftDist < SLOW_DOWN_DISTANCE)
         speed = calculateDynamicSpeed(leftDist, speed);
-    else if (direction == 6)
+    else if (direction == 6 && rightDist < SLOW_DOWN_DISTANCE)
         speed = calculateDynamicSpeed(rightDist, speed);
+    
     switch (direction)
     {
     case 1: // FORWARD 
         if (DEBUG_MODE)
             Serial.println("Moving FORWARD");
-        // Forward movement logic from basic_moveset
         moveMotor(motorLeft, BACKWARD, speed);
         moveMotor(motorRight, FORWARD, speed);
-        moveMotor(motorBack, STOP, 0); // Back motor disabled for forward movement
+        moveMotor(motorBack, STOP, 0); 
         break;
         
     case 2: // BACKWARD
         if (DEBUG_MODE)
             Serial.println("Moving BACKWARD");
-        // Backward movement logic from basic_moveset
         moveMotor(motorLeft, FORWARD, speed);
         moveMotor(motorRight, BACKWARD, speed);
-        moveMotor(motorBack, STOP, 0); // Back motor disabled for backward movement
+        moveMotor(motorBack, STOP, 0); 
         break;
     case 3: // LEFT LATERAL MOVEMENT
         if (DEBUG_MODE)
@@ -389,40 +407,127 @@ void executeMovement(int direction, int speed)
     }
 }
 
-// Function to read distance from an ultrasonic sensor
+// Function to read distance with improved reliability
 float readUltrasonicDistance(int trigPin, int echoPin)
 {
-    digitalWrite(trigPin, LOW);
-    delayMicroseconds(2);
-    digitalWrite(trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trigPin, LOW);
-
-    float duration = pulseIn(echoPin, HIGH);
-    return (duration * 0.0343) / 2.0; // Convert to centimeters
+    // Try up to 3 readings to get a valid value
+    for (int attempt = 0; attempt < 3; attempt++) {
+        digitalWrite(trigPin, LOW);
+        delayMicroseconds(2);
+        digitalWrite(trigPin, HIGH);
+        delayMicroseconds(10);
+        digitalWrite(trigPin, LOW);
+    
+        // Use timeout to avoid hanging
+        unsigned long startTime = micros();
+        float duration = pulseIn(echoPin, HIGH, 23200); // 4m max range timeout
+        
+        // Check if reading is valid (not 0 and not timeout)
+        if (duration > 0) {
+            float distance = (duration * 0.0343) / 2.0; // Convert to centimeters
+            
+            // Filter out unreasonable values (>400cm or <2cm)
+            if (distance >= 2.0 && distance <= 400.0) {
+                return distance;
+            }
+        }
+        
+        // Brief delay before retry
+        delayMicroseconds(50);
+    }
+    
+    // If all attempts failed, return a safe high value
+    return SAFE_DISTANCE * 1.5; // Return a value that won't trigger slowdown
 }
 
 void updateDistances()
 {
-    // Read all sensor distances
-    distFL = readUltrasonicDistance(TRIG_FL, ECHO_FL);
-    distF = readUltrasonicDistance(TRIG_F, ECHO_F);
-    distFR = readUltrasonicDistance(TRIG_FR, ECHO_FR);
-    distBL = readUltrasonicDistance(TRIG_BL, ECHO_BL);
-    distB = readUltrasonicDistance(TRIG_B, ECHO_B);
-    distBR = readUltrasonicDistance(TRIG_BR, ECHO_BR);
+    // Read all sensor distances with filtering to prevent erratic behavior
+    // Save previous readings
+    static float prevFL = SAFE_DISTANCE, prevF = SAFE_DISTANCE, prevFR = SAFE_DISTANCE;
+    static float prevBL = SAFE_DISTANCE, prevB = SAFE_DISTANCE, prevBR = SAFE_DISTANCE;
+    
+    // Read new values
+    float newFL = readUltrasonicDistance(TRIG_FL, ECHO_FL);
+    float newF = readUltrasonicDistance(TRIG_F, ECHO_F);
+    float newFR = readUltrasonicDistance(TRIG_FR, ECHO_FR);
+    float newBL = readUltrasonicDistance(TRIG_BL, ECHO_BL);
+    float newB = readUltrasonicDistance(TRIG_B, ECHO_B);
+    float newBR = readUltrasonicDistance(TRIG_BR, ECHO_BR);
+    
+    // Apply simple filtering - if new reading is drastically different, 
+    // verify with additional reading before accepting
+    distFL = filterReading(prevFL, newFL);
+    distF = filterReading(prevF, newF);
+    distFR = filterReading(prevFR, newFR);
+    distBL = filterReading(prevBL, newBL);
+    distB = filterReading(prevB, newB);
+    distBR = filterReading(prevBR, newBR);
+    
+    // Update previous values for next iteration
+    prevFL = distFL;
+    prevF = distF;
+    prevFR = distFR;
+    prevBL = distBL;
+    prevB = distB;
+    prevBR = distBR;
 }
+
+// Helper function to filter unreliable readings
+float filterReading(float prevValue, float newValue) {
+    // If reading jumps by more than 50% and is less than the safe distance, 
+    // be conservative and use the smaller value
+    if (abs(newValue - prevValue) > (prevValue * 0.5) && newValue < SAFE_DISTANCE) {
+        // Verify with an additional reading
+        float verifyValue = readUltrasonicDistance(TRIG_FL, ECHO_FL);
+        if (abs(verifyValue - newValue) < abs(verifyValue - prevValue)) {
+            return newValue; // New reading confirmed
+        } else {
+            return prevValue; // Keep previous reading
+        }
+    }
+    return newValue; // Accept new reading
+}
+
 // Global controller instance
 
 // === SETUP AND LOOP FUNCTIONS ===
 
 void setup()
 {
-    // 1. Hardware Initialization First
-    // Setup motors
+    // 1. Hardware Initialization First (moved to top)
+    // Setup motors - Initialize pins BEFORE anything else
     setupMotorPins(motorLeft);
     setupMotorPins(motorRight);
     setupMotorPins(motorBack);
+    
+    // Make sure enable pins are set properly
+    ensureMotorEnablePins();
+    
+    // 2. Serial Communication Setup
+    Serial.begin(115200); // Start serial after pin initialization
+    delay(100);           // Short stabilization delay
+    
+    // 3. Clear garbage data (critical for Raspberry Pi)
+    while (Serial.available())
+    {
+        Serial.read(); // Flush any noise
+    }
+    
+    // 5. Motor Test (optional)
+    if (DEBUG_MODE)
+    {
+        testMotors(); // Brief motor pulse test
+        Serial.println("Motor test complete");
+    } // Always send a ready signal regardless of debug mode
+    Serial.println("<READY>");
+    
+    // Initialize with 2-wheel configuration by default
+    useThreeWheels = false;
+    if (DEBUG_MODE)
+    {
+        Serial.println("Initialized in TWO_WHEEL mode");
+    }
 
     // Setup ultrasonic sensors
     int trigPins[] = {TRIG_FL, TRIG_F, TRIG_FR, TRIG_BL, TRIG_B, TRIG_BR};
@@ -432,31 +537,6 @@ void setup()
         pinMode(trigPins[i], OUTPUT);
         pinMode(echoPins[i], INPUT);
         digitalWrite(trigPins[i], LOW); // Ensure clean start
-    }
-
-    // 2. Serial Communication Setup
-    Serial.begin(115200); // Start serial FIRST without resetting
-    delay(100);           // Short stabilization delay
-
-    // 3. Clear garbage data (critical for Raspberry Pi)
-    while (Serial.available())
-    {
-        Serial.read(); // Flush any noise
-    }
-
-    // 5. Motor Test (optional)
-    if (DEBUG_MODE)
-    {
-        testMotors(); // Brief motor pulse test
-        Serial.println("Motor test complete");
-    } // Always send a ready signal regardless of debug mode
-    Serial.println("<READY>");
-
-    // Initialize with 2-wheel configuration by default
-    useThreeWheels = false;
-    if (DEBUG_MODE)
-    {
-        Serial.println("Initialized in TWO_WHEEL mode");
     }
 }
 
@@ -697,7 +777,51 @@ void parseCommand(const char *cmd)
     {
         Serial.println("<ACK:PING>");
         return;
-    } 
+    }
+    
+    // Special test command just for left motor debugging
+    if (strcmp(command, "TESTLEFT") == 0)
+    {
+        int speed = 80;
+        int direction = 0;
+        
+        // Parse optional parameters if provided
+        if (params[0] != '\0') {
+            sscanf(params, "%d,%d", &direction, &speed);
+        }
+        
+        Serial.println("<DIRECT LEFT MOTOR TEST>");
+        // Direct pin control with verbose output
+        digitalWrite(motorLeft.REN, HIGH);
+        digitalWrite(motorLeft.LEN, HIGH);
+        
+        Serial.print("Testing left motor: Direction=");
+        Serial.print(direction);
+        Serial.print(" Speed=");
+        Serial.println(speed);
+        
+        if (direction == 0) {
+            // Forward
+            Serial.println("LEFT MOTOR FORWARD");
+            analogWrite(motorLeft.RPWM, speed);
+            analogWrite(motorLeft.LPWM, 0);
+        } else {
+            // Backward
+            Serial.println("LEFT MOTOR BACKWARD");
+            analogWrite(motorLeft.RPWM, 0);
+            analogWrite(motorLeft.LPWM, speed);
+        }
+        
+        delay(1000);  // Run for 1 second
+        
+        // Stop
+        Serial.println("LEFT MOTOR STOPPING");
+        analogWrite(motorLeft.RPWM, 0);
+        analogWrite(motorLeft.LPWM, 0);
+        
+        Serial.println("<ACK:TESTLEFT>");
+        return;
+    }
     
     // Check for STOP/CLEAR commands
     if (strcmp(command, "STOP") == 0 || strcmp(command, "CLEAR") == 0)
@@ -757,7 +881,7 @@ void parseCommand(const char *cmd)
             Serial.println("<ERR:Invalid ROT params>");
         }
         return;
-    } // Handle SPEED command
+    }    // Handle SPEED command
     if (strcmp(command, "SPEED") == 0)
     {
         // Parse speed parameters: max_speed,min_speed
@@ -767,17 +891,21 @@ void parseCommand(const char *cmd)
         if (sscanf(params, "%d,%d", &max_speed, &min_speed) == 2)
         {
             // Validate and apply speed limits
-            MAX_SPEED = constrain(max_speed, 50, 150);
-            MIN_SPEED = constrain(min_speed, 40, MAX_SPEED - 10);
+            MAX_SPEED = constrain(max_speed, 50, 255);
+            MIN_SPEED = constrain(min_speed, 30, MAX_SPEED - 5);
 
-            Serial.println("<ACK:SPEED>");
+            Serial.print("<ACK:SPEED:");
+            Serial.print(MAX_SPEED);
+            Serial.print(",");
+            Serial.print(MIN_SPEED);
+            Serial.println(">");
         }
         else
         {
             Serial.println("<ERR:Invalid SPEED params>");
         }
         return;
-    } // Handle SENS command
+    }// Handle SENS command
     if (strcmp(command, "SENS") == 0)
     {
         // Output sensor distances with proper message framing

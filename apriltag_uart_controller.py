@@ -99,8 +99,8 @@ class AprilTagUARTController:
     def __init__(self,
                  port: Optional[str] = None,
                  baud_rate: int = DEFAULT_BAUD_RATE,
-                 max_speed: int = 70,
-                 min_speed: int = 40,
+                 max_speed: int = 100,
+                 min_speed: int = 50,
                  verbose: bool = False,
                  charging_time: str = DEFAULT_CHARGING_TIME,
                  work_time: str = DEFAULT_WORK_TIME,
@@ -708,9 +708,9 @@ def main():
                         help=f'Serial port (default: auto-detect)')
     parser.add_argument('--baud', type=int, default=DEFAULT_BAUD_RATE,
                         help=f'Baud rate (default: {DEFAULT_BAUD_RATE})')
-    parser.add_argument('--max-speed', type=int, default=150,
+    parser.add_argument('--max-speed', type=int, default=100,
                         help='Maximum motor speed (50-255)')
-    parser.add_argument('--min-speed', type=int, default=100,
+    parser.add_argument('--min-speed', type=int, default=50,
                         help='Minimum motor speed (30-max_speed)')
     parser.add_argument('--charging-time', type=str, default=DEFAULT_CHARGING_TIME,
                         help=f'Time to go to charging station, format HH:MM (default: {DEFAULT_CHARGING_TIME})')
