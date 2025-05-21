@@ -15,7 +15,7 @@
 
 // === I2C Configuration ===
 #define I2C_SLAVE_ADDRESS 0x08  // Slave address for this Arduino
-#define I2C_MASTER_OVERRIDE_PIN 13  // Digital pin that master can use to override
+#define I2C_MASTER_OVERRIDE_PIN 12  // Digital pin that master can use to override
 bool masterOverrideActive = false;  // Flag to indicate if master override is active
 bool prevMasterOverrideState = false; // To detect changes in override state
 
@@ -64,8 +64,8 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 #define REN_RIGHT 51
 #define LEN_RIGHT 50
 
-#define RPWM_LEFT 2 
-#define LPWM_LEFT 3 
+#define RPWM_LEFT 9
+#define LPWM_LEFT 10
 #define REN_LEFT 38
 #define LEN_LEFT 39
 
@@ -130,6 +130,10 @@ const unsigned long COMMAND_TIMEOUT = 1000; // 1 second timeout
 
 // === Globals ===
 bool emergencyStop = false;
+bool frontEmergencyStop = false;  // Blocks forward movement
+bool backEmergencyStop = false;   // Blocks backward movement
+bool leftEmergencyStop = false;   // Blocks left movement 
+bool rightEmergencyStop = false;  // Blocks right movement
 float distFL, distF, distFR, distBL, distB, distBR;
 int movementMode = 0;        // 0=Normal, 1=Rotation
 bool useThreeWheels = false; // Flag to select between 2-wheel (false) and 3-wheel (true) configuration
@@ -261,6 +265,13 @@ float calculateDynamicSpeed(float distance, float targetSpeed)
 // Rotation functions
 void rotateLeft(int speed = MIN_SPEED)
 {
+    // Check for leftEmergencyStop or rightEmergencyStop since rotation uses both sides
+    if (leftEmergencyStop || rightEmergencyStop) {
+        if (DEBUG_MODE)
+            Serial.println("<ROTATION_BLOCKED:EMERGENCY_STOP>");
+        return;
+    }
+
     if (DEBUG_MODE)
         Serial.println("Rotating LEFT (CCW)");
 
@@ -283,6 +294,13 @@ void rotateLeft(int speed = MIN_SPEED)
 
 void rotateRight(int speed = MIN_SPEED)
 {
+    // Check for leftEmergencyStop or rightEmergencyStop since rotation uses both sides
+    if (leftEmergencyStop || rightEmergencyStop) {
+        if (DEBUG_MODE)
+            Serial.println("<ROTATION_BLOCKED:EMERGENCY_STOP>");
+        return;
+    }
+    
     if (DEBUG_MODE)
         Serial.println("Rotating RIGHT (CW)");
 
@@ -305,10 +323,32 @@ void rotateRight(int speed = MIN_SPEED)
 
 void executeMovement(int direction, int speed)
 {
-    // Check if master override is active - don't execute movement if so
+    // Check if master override active
     if (masterOverrideActive) {
         if (DEBUG_MODE) {
             Serial.println("<MOVEMENT_BLOCKED:MASTER_OVERRIDE>");
+        }
+        return;
+    }
+
+    // Check direction-specific emergency stops
+    if ((direction == 1 && frontEmergencyStop) ||
+        (direction == 2 && backEmergencyStop) ||
+        (direction == 3 && leftEmergencyStop) ||
+        (direction == 4 && rightEmergencyStop) ||
+        (direction == 5 && (leftEmergencyStop || rightEmergencyStop)) ||
+        (direction == 6 && (leftEmergencyStop || rightEmergencyStop)))
+    {
+        if (DEBUG_MODE) {
+            Serial.print("<MOVEMENT_BLOCKED:EMERGENCY_STOP_");
+            switch(direction) {
+                case 1: Serial.println("FORWARD>");  break;
+                case 2: Serial.println("BACKWARD>"); break;
+                case 3: Serial.println("LEFT>");     break;
+                case 4: Serial.println("RIGHT>");    break;
+                case 5: Serial.println("ROTATE_LEFT>");  break;
+                case 6: Serial.println("ROTATE_RIGHT>"); break;
+            }
         }
         return;
     }
@@ -473,6 +513,26 @@ void updateDistances()
     float newB = readUltrasonicDistance(TRIG_B, ECHO_B);
     float newBR = readUltrasonicDistance(TRIG_BR, ECHO_BR);
     
+    // In debug mode, periodically check for critically close readings
+    static unsigned long lastCriticalCheck = 0;
+    if (DEBUG_MODE) {
+        unsigned long now = millis();
+        if (now - lastCriticalCheck > 1000) { // Check once per second
+            if (newF < CRITICAL_DISTANCE || newFL < CRITICAL_DISTANCE || newFR < CRITICAL_DISTANCE ||
+                newB < CRITICAL_DISTANCE || newBL < CRITICAL_DISTANCE || newBR < CRITICAL_DISTANCE) {
+                Serial.print("<DEBUG:CRITICAL_DISTANCE:");
+                Serial.print(newFL < CRITICAL_DISTANCE ? "FL " : "");
+                Serial.print(newF < CRITICAL_DISTANCE ? "F " : "");
+                Serial.print(newFR < CRITICAL_DISTANCE ? "FR " : "");
+                Serial.print(newBL < CRITICAL_DISTANCE ? "BL " : "");
+                Serial.print(newB < CRITICAL_DISTANCE ? "B " : "");
+                Serial.print(newBR < CRITICAL_DISTANCE ? "BR" : "");
+                Serial.println(">");
+            }
+            lastCriticalCheck = now;
+        }
+    }
+    
     // Apply simple filtering - if new reading is drastically different, 
     // verify with additional reading before accepting
     distFL = filterReading(prevFL, newFL);
@@ -585,6 +645,19 @@ void checkOverridePin() {
 
 void setup()
 {
+    // Clear any existing serial data
+    Serial.end();
+    delay(100);
+
+    // Start serial with proper baud rate
+    Serial.begin(115200);
+    delay(1000); // Wait for serial to fully initialize
+
+    // Clear any initial data
+    while (Serial.available()) {
+    Serial.read();
+    }
+
     // 1. Hardware Initialization First (moved to top)
     // Setup motors - Initialize pins BEFORE anything else
     setupMotorPins(motorLeft);
@@ -600,20 +673,15 @@ void setup()
     Wire.onRequest(requestEvent);
     
     // Setup override pin
-    pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT);
+    /* pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT);
     prevMasterOverrideState = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == HIGH);
     masterOverrideActive = prevMasterOverrideState;
-    
-    // 2. Serial Communication Setup
-    Serial.begin(115200); // Start serial after pin initialization
-    delay(100);           // Short stabilization delay
-    
-    // 3. Clear garbage data (critical for Raspberry Pi)
-    while (Serial.available())
-    {
-        Serial.read(); // Flush any noise
-    }
-    
+     */
+     // === TEMPORAL MEASURE TO DEACTIVATE MASTER OVERRIDE ===
+    pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT_PULLUP); // Using internal pullup resistor
+    prevMasterOverrideState = false; // Force this to false
+    masterOverrideActive = false;    // Force override to be inactive
+
     // 5. Motor Test (optional)
     if (DEBUG_MODE)
     {
@@ -707,8 +775,8 @@ void testMotors()
 void loop()
 {
     // Check if master override is active (via pin)
-    checkOverridePin();
-    
+/*     checkOverridePin();
+ */    
     // If master override is active, only process I2C but not serial or motor commands
     if (masterOverrideActive) {
         // Only report status periodically if in debug mode
@@ -738,29 +806,72 @@ void loop()
     {
         lastControlLoop = now;
 
-        // Check emergency stop conditions
-        if ((distF < CRITICAL_DISTANCE || distB < CRITICAL_DISTANCE) && !emergencyStop)
-        {
-            emergencyStop = true;
-            stopAllMotors();
-            Serial.println("<EMERGENCY STOP: OBSTACLE DETECTED>");
+        // Check emergency stop conditions directionally
+        bool frontDanger = (distF < CRITICAL_DISTANCE || distFL < CRITICAL_DISTANCE || distFR < CRITICAL_DISTANCE);
+        bool backDanger = (distB < CRITICAL_DISTANCE || distBL < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
+        bool leftDanger = (distFL < CRITICAL_DISTANCE || distBL < CRITICAL_DISTANCE);
+        bool rightDanger = (distFR < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
+        
+        // Update directional emergency flags
+        if (frontDanger != frontEmergencyStop) {
+            frontEmergencyStop = frontDanger;
+            if (frontEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_STOP:FRONT>");
+            } else if (!frontEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_RELEASED:FRONT>");
+            }
         }
-        else if (distFL < CRITICAL_DISTANCE && !emergencyStop)
-        {
-            emergencyStop = true;
-            stopAllMotors();
-            Serial.println("<EMERGENCY STOP: LEFT FRONT OBSTACLE>");
+
+        if (backDanger != backEmergencyStop) {
+            backEmergencyStop = backDanger;
+            if (backEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_STOP:BACK>");
+            } else if (!backEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_RELEASED:BACK>");
+            }
         }
-        else if (distFR < CRITICAL_DISTANCE && !emergencyStop)
-        {
-            emergencyStop = true;
-            stopAllMotors();
-            Serial.println("<EMERGENCY STOP: RIGHT FRONT OBSTACLE>");
+
+        if (leftDanger != leftEmergencyStop) {
+            leftEmergencyStop = leftDanger;
+            if (leftEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_STOP:LEFT>");
+            } else if (!leftEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_RELEASED:LEFT>");
+            }
         }
-        else if (emergencyStop && (distF > SAFE_DISTANCE) && (distFL > SAFE_DISTANCE) && (distFR > SAFE_DISTANCE))
-        {
-            emergencyStop = false;
-            Serial.println("<EMERGENCY STOP RELEASED>");
+
+        if (rightDanger != rightEmergencyStop) {
+            rightEmergencyStop = rightDanger;
+            if (rightEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_STOP:RIGHT>");
+            } else if (!rightEmergencyStop && DEBUG_MODE) {
+                Serial.println("<EMERGENCY_RELEASED:RIGHT>");
+            }
+        }
+        
+        // Set overall emergencyStop flag (for compatibility with existing code)
+        bool prevEmergencyStop = emergencyStop;
+        emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
+        
+        // Stop all motors if any new emergency stop is detected
+        if (emergencyStop && !prevEmergencyStop) {
+            stopAllMotors();
+            
+            // Additional debug information if needed
+            if (DEBUG_MODE) {
+                Serial.print("Distances: FL=");
+                Serial.print(distFL);
+                Serial.print(" F=");
+                Serial.print(distF);
+                Serial.print(" FR=");
+                Serial.print(distFR);
+                Serial.print(" BL=");
+                Serial.print(distBL);
+                Serial.print(" B=");
+                Serial.print(distB);
+                Serial.print(" BR=");
+                Serial.println(distBR);
+            }
         }
 
         // Only print status message in DEBUG_MODE
@@ -942,8 +1053,45 @@ void parseCommand(const char *cmd)
     if (strcmp(command, "STOP") == 0 || strcmp(command, "CLEAR") == 0)
     {
         stopAllMotors();
-        emergencyStop = false;
-        Serial.println("<ACK:STOP>");
+        
+        // Clear directional emergency stops if obstacles are no longer present
+        bool clearedAny = false;
+        
+        if (frontEmergencyStop && distF > SAFE_DISTANCE && distFL > SAFE_DISTANCE && distFR > SAFE_DISTANCE) {
+            frontEmergencyStop = false;
+            clearedAny = true;
+            if (DEBUG_MODE) Serial.println("<CLEARED:FRONT_EMERGENCY>");
+        }
+        
+        if (backEmergencyStop && distB > SAFE_DISTANCE && distBL > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+            backEmergencyStop = false;
+            clearedAny = true;
+            if (DEBUG_MODE) Serial.println("<CLEARED:BACK_EMERGENCY>");
+        }
+        
+        if (leftEmergencyStop && distFL > SAFE_DISTANCE && distBL > SAFE_DISTANCE) {
+            leftEmergencyStop = false;
+            clearedAny = true;
+            if (DEBUG_MODE) Serial.println("<CLEARED:LEFT_EMERGENCY>");
+        }
+        
+        if (rightEmergencyStop && distFR > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+            rightEmergencyStop = false;
+            clearedAny = true;
+            if (DEBUG_MODE) Serial.println("<CLEARED:RIGHT_EMERGENCY>");
+        }
+        
+        // Update the overall emergency flag
+        emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
+        
+        // Send appropriate acknowledgment
+        if (clearedAny) {
+            Serial.println("<ACK:STOP:EMERGENCY_PARTLY_CLEARED>");
+        } else if (emergencyStop) {
+            Serial.println("<ACK:STOP:EMERGENCY_ACTIVE>");
+        } else {
+            Serial.println("<ACK:STOP>");
+        }
         return;
     } 
     
@@ -1073,6 +1221,38 @@ void parseCommand(const char *cmd)
         // Report I2C status
         Serial.print("<ACK:I2C:");
         Serial.print(masterOverrideActive ? "OVERRIDE_ACTIVE" : "NORMAL");
+        Serial.println(">");
+        return;
+    }
+    
+    // Handle STATUS command to report current state
+    if (strcmp(command, "STATUS") == 0)
+    {
+        // Report robot status including emergency flags and sensor readings
+        Serial.print("<ACK:STATUS:");
+        
+        if (frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop) {
+            Serial.print("EMERGENCY:");
+            Serial.print(frontEmergencyStop ? "F" : "");
+            Serial.print(backEmergencyStop ? "B" : "");
+            Serial.print(leftEmergencyStop ? "L" : "");
+            Serial.print(rightEmergencyStop ? "R" : "");
+        } else {
+            Serial.print("NORMAL");
+        }
+        
+        Serial.print(":");
+        Serial.print(distFL);
+        Serial.print(",");
+        Serial.print(distF);
+        Serial.print(",");
+        Serial.print(distFR);
+        Serial.print(",");
+        Serial.print(distBL);
+        Serial.print(",");
+        Serial.print(distB);
+        Serial.print(",");
+        Serial.print(distBR);
         Serial.println(">");
         return;
     }
