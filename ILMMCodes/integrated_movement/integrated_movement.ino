@@ -221,8 +221,8 @@ void rotateLeft(int speed = MIN_SPEED)
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
     
     // Both wheels spin in the same direction to rotate in place
-    moveMotor(motorLeft, FORWARD, speed);
-    moveMotor(motorRight, FORWARD, speed);
+    moveMotor(motorLeft, FORWARD, speed*1.30);
+    moveMotor(motorRight, FORWARD, speed*0.25);
 
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
@@ -243,8 +243,8 @@ void rotateRight(int speed = MIN_SPEED)
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
     
     // Both wheels spin in the same direction to rotate in place
-    moveMotor(motorLeft, BACKWARD, speed);
-    moveMotor(motorRight, BACKWARD, speed);
+    moveMotor(motorLeft, BACKWARD, speed*0.25);
+    moveMotor(motorRight, BACKWARD, speed*1.30);
 
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
@@ -464,26 +464,64 @@ void setup()
 void testMotors()
 {
     // Very brief pulse on each motor to confirm connections
-    const int testSpeed = 40;     // Lower speed for safety
-    const int testDuration = 100; // Very short duration (ms)
+    const int testSpeed = 60;     // Higher speed for better visibility
+    const int testDuration = 300; // Longer duration for better visibility
 
-    // Test left motor
+    Serial.println("<TESTING LEFT MOTOR FORWARD>");
+    // Test left motor forward with direct pin control
+    digitalWrite(motorLeft.REN, HIGH);
+    digitalWrite(motorLeft.LEN, HIGH);
+    analogWrite(motorLeft.RPWM, testSpeed);  // FORWARD
+    analogWrite(motorLeft.LPWM, 0);
+    delay(testDuration);
+    analogWrite(motorLeft.RPWM, 0);
+    analogWrite(motorLeft.LPWM, 0);
+    delay(500);
+
+    Serial.println("<TESTING LEFT MOTOR BACKWARD>");
+    // Test left motor backward with direct pin control
+    digitalWrite(motorLeft.REN, HIGH);
+    digitalWrite(motorLeft.LEN, HIGH);
+    analogWrite(motorLeft.RPWM, 0);
+    analogWrite(motorLeft.LPWM, testSpeed);  // BACKWARD
+    delay(testDuration);
+    analogWrite(motorLeft.RPWM, 0);
+    analogWrite(motorLeft.LPWM, 0);
+    delay(500);
+
+    // Test using the moveMotor function
+    Serial.println("<TESTING LEFT MOTOR WITH MOVEMOTOR>");
     moveMotor(motorLeft, FORWARD, testSpeed);
     delay(testDuration);
     moveMotor(motorLeft, STOP, 0);
+    delay(200);
+    moveMotor(motorLeft, BACKWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorLeft, STOP, 0);
+    delay(500);
 
     // Test right motor
+    Serial.println("<TESTING RIGHT MOTOR>");
     moveMotor(motorRight, FORWARD, testSpeed);
     delay(testDuration);
     moveMotor(motorRight, STOP, 0);
+    delay(200);
+    moveMotor(motorRight, BACKWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorRight, STOP, 0);
+    delay(500);
 
     // Test back motor
+    Serial.println("<TESTING BACK MOTOR>");
     moveMotor(motorBack, FORWARD, testSpeed);
     delay(testDuration);
     moveMotor(motorBack, STOP, 0);
+    delay(200);
+    moveMotor(motorBack, BACKWARD, testSpeed);
+    delay(testDuration);
+    moveMotor(motorBack, STOP, 0);
 
-    if (DEBUG_MODE)
-        Serial.println(F("Motor test complete."));
+    Serial.println("<MOTOR TEST COMPLETE>");
 }
 
 void loop()
@@ -659,14 +697,18 @@ void parseCommand(const char *cmd)
     {
         Serial.println("<ACK:PING>");
         return;
-    } // Check for STOP/CLEAR commands
+    } 
+    
+    // Check for STOP/CLEAR commands
     if (strcmp(command, "STOP") == 0 || strcmp(command, "CLEAR") == 0)
     {
         stopAllMotors();
         emergencyStop = false;
         Serial.println("<ACK:STOP>");
         return;
-    } // Handle MOV command
+    } 
+    
+    // Handle MOV command
     if (strcmp(command, "MOV") == 0)
     {
         // Parse movement parameters: direction,speed

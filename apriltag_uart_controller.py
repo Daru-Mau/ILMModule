@@ -74,7 +74,7 @@ VERBOSE = False
 DETECTION_INTERVAL = 0.1
 
 # Navigation parameters
-CENTER_TOLERANCE = 0.15
+CENTER_TOLERANCE = 0.1
 DISTANCE_THRESHOLD = 30
 
 # Time-based task scheduling
@@ -99,7 +99,7 @@ class AprilTagUARTController:
     def __init__(self,
                  port: Optional[str] = None,
                  baud_rate: int = DEFAULT_BAUD_RATE,
-                 max_speed: int = 50,
+                 max_speed: int = 70,
                  min_speed: int = 40,
                  verbose: bool = False,
                  charging_time: str = DEFAULT_CHARGING_TIME,
@@ -333,30 +333,23 @@ class AprilTagUARTController:
             speed = 0
         else:
             if center_x < frame_center - tolerance:
-                direction = DIR_RIGHT
-                # Calculate proportional speed based on how far off-center
-                offset_ratio = min(1.0, abs(center_x - frame_center) / (frame_width/4))
-                turn_factor = 0.25 + (0.25 * offset_ratio)  # 25-50% of speed
-                
-                # Further reduce turn speed when close to the tag
-                if distance_cm < 100:  # When closer than 1 meter
-                    turn_factor *= (distance_cm / 100)  # Slower turns when closer
-                    
-                speed = max(self.min_speed, int(speed * turn_factor))
-            elif center_x > frame_center + tolerance:
                 direction = DIR_LEFT
                 # Calculate proportional speed based on how far off-center
                 offset_ratio = min(1.0, abs(center_x - frame_center) / (frame_width/4))
                 turn_factor = 0.25 + (0.25 * offset_ratio)  # 25-50% of speed
-                
-                # Further reduce turn speed when close to the tag
-                if distance_cm < 100:  # When closer than 1 meter
-                    turn_factor *= (distance_cm / 100)  # Slower turns when closer
-                    
                 speed = max(self.min_speed, int(speed * turn_factor))
-            else:
-                direction = DIR_BACKWARD  # Changed from FORWARD to BACKWARD
+            elif center_x > frame_center + tolerance:
+                direction = DIR_RIGHT
+                # Reduce speed for turning - LOWER VALUE
                 
+                speed = max(self.min_speed, int(speed * 0.4))  # Reduced from 0.7 to 0.4
+            else:
+                direction = DIR_FORWARD  # Changed from FORWARD to BACKWARD
+
+        if self.verbose:
+            logger.debug(
+                f"Distance: {distance_cm:.1f}cm, Direction: {direction_to_str(direction)}, Speed: {speed}")
+
         return direction, speed
 
     def process_frame(self, frame):

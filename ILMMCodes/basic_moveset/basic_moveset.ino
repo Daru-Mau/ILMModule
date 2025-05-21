@@ -173,7 +173,7 @@ void rotateLeft(int speed, bool use3Wheel)
   {
     // In 2-wheel mode, only side wheels rotate
     moveMotor(motorLeft, FORWARD, speed);
-    moveMotor(motorRight, FORWARD, speed);
+    moveMotor(motorRight, FORWARD, speed*0.25);
     moveMotor(motorBack, STOP, 0);
   }
 }
@@ -191,7 +191,7 @@ void rotateRight(int speed, bool use3Wheel)
   else
   {
     // In 2-wheel mode, only side wheels rotate
-    moveMotor(motorLeft, BACKWARD, speed);
+    moveMotor(motorLeft, BACKWARD, speed*0.25);
     moveMotor(motorRight, BACKWARD, speed);
     moveMotor(motorBack, STOP, 0);
   }
@@ -352,7 +352,7 @@ float calculateDynamicSpeed(float distance, float targetSpeed)
   
   if (distance <= CRITICAL_DISTANCE)
   {
-    return 0; // Emergency stop
+    return 0; // Emergency stop 
   }
   else if (distance <= SLOW_DOWN_DISTANCE)
   {
