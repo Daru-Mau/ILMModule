@@ -356,23 +356,11 @@ void executeMovement(int direction, int speed)
     // Make sure all motor enable pins are HIGH
     ensureMotorEnablePins();
     
-    // Read distances
+    // Read distances for dynamic speed adjustment
     float forwardDist = min(min(distFL, distF), distFR);
     float backwardDist = min(min(distBL, distB), distBR);
     float leftDist = min(distFL, distBL);
     float rightDist = min(distFR, distBR);
-
-    // Only stop for critical obstacle proximity - simplify to just check relevant direction
-    if ((direction == 1 && forwardDist < CRITICAL_DISTANCE) ||
-        (direction == 2 && backwardDist < CRITICAL_DISTANCE) ||
-        (direction == 3 && leftDist < CRITICAL_DISTANCE) ||
-        (direction == 4 && rightDist < CRITICAL_DISTANCE) ||
-        (direction == 5 && leftDist < CRITICAL_DISTANCE) ||
-        (direction == 6 && rightDist < CRITICAL_DISTANCE))
-    {
-        stopAllMotors();
-        return;
-    }
 
     // Only apply dynamic speed adjustment for really close obstacles
     // Otherwise, let the Raspberry Pi control the speed directly
@@ -853,25 +841,22 @@ void loop()
         bool prevEmergencyStop = emergencyStop;
         emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
         
-        // Stop all motors if any new emergency stop is detected
-        if (emergencyStop && !prevEmergencyStop) {
-            stopAllMotors();
-            
-            // Additional debug information if needed
-            if (DEBUG_MODE) {
-                Serial.print("Distances: FL=");
-                Serial.print(distFL);
-                Serial.print(" F=");
-                Serial.print(distF);
-                Serial.print(" FR=");
-                Serial.print(distFR);
-                Serial.print(" BL=");
-                Serial.print(distBL);
-                Serial.print(" B=");
-                Serial.print(distB);
-                Serial.print(" BR=");
-                Serial.println(distBR);
-            }
+        // Don't stop all motors when an emergency stop is detected - instead let the 
+        // direction-specific emergency stops control movement in executeMovement().
+        // Just log the sensor information in debug mode
+        if (emergencyStop && !prevEmergencyStop && DEBUG_MODE) {
+            Serial.print("Distances: FL=");
+            Serial.print(distFL);
+            Serial.print(" F=");
+            Serial.print(distF);
+            Serial.print(" FR=");
+            Serial.print(distFR);
+            Serial.print(" BL=");
+            Serial.print(distBL);
+            Serial.print(" B=");
+            Serial.print(distB);
+            Serial.print(" BR=");
+            Serial.println(distBR);
         }
 
         // Only print status message in DEBUG_MODE
@@ -1054,44 +1039,104 @@ void parseCommand(const char *cmd)
     {
         stopAllMotors();
         
-        // Clear directional emergency stops if obstacles are no longer present
-        bool clearedAny = false;
-        
-        if (frontEmergencyStop && distF > SAFE_DISTANCE && distFL > SAFE_DISTANCE && distFR > SAFE_DISTANCE) {
-            frontEmergencyStop = false;
-            clearedAny = true;
-            if (DEBUG_MODE) Serial.println("<CLEARED:FRONT_EMERGENCY>");
-        }
-        
-        if (backEmergencyStop && distB > SAFE_DISTANCE && distBL > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
-            backEmergencyStop = false;
-            clearedAny = true;
-            if (DEBUG_MODE) Serial.println("<CLEARED:BACK_EMERGENCY>");
-        }
-        
-        if (leftEmergencyStop && distFL > SAFE_DISTANCE && distBL > SAFE_DISTANCE) {
-            leftEmergencyStop = false;
-            clearedAny = true;
-            if (DEBUG_MODE) Serial.println("<CLEARED:LEFT_EMERGENCY>");
-        }
-        
-        if (rightEmergencyStop && distFR > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
-            rightEmergencyStop = false;
-            clearedAny = true;
-            if (DEBUG_MODE) Serial.println("<CLEARED:RIGHT_EMERGENCY>");
+        // Check for direction-specific clear parameter
+        if (params[0] != '\0') {
+            // Direction specific clear requested
+            if (strcmp(params, "FRONT") == 0 && distF > SAFE_DISTANCE && distFL > SAFE_DISTANCE && distFR > SAFE_DISTANCE) {
+                frontEmergencyStop = false;
+                if (DEBUG_MODE) Serial.println("<CLEARED:FRONT_EMERGENCY>");
+            }
+            else if (strcmp(params, "BACK") == 0 && distB > SAFE_DISTANCE && distBL > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+                backEmergencyStop = false;
+                if (DEBUG_MODE) Serial.println("<CLEARED:BACK_EMERGENCY>");
+            }
+            else if (strcmp(params, "LEFT") == 0 && distFL > SAFE_DISTANCE && distBL > SAFE_DISTANCE) {
+                leftEmergencyStop = false;
+                if (DEBUG_MODE) Serial.println("<CLEARED:LEFT_EMERGENCY>");
+            }
+            else if (strcmp(params, "RIGHT") == 0 && distFR > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+                rightEmergencyStop = false;
+                if (DEBUG_MODE) Serial.println("<CLEARED:RIGHT_EMERGENCY>");
+            }
+            else if (strcmp(params, "ALL") == 0) {
+                // Check each direction individually
+                bool clearedAny = false;
+                
+                if (frontEmergencyStop && distF > SAFE_DISTANCE && distFL > SAFE_DISTANCE && distFR > SAFE_DISTANCE) {
+                    frontEmergencyStop = false;
+                    clearedAny = true;
+                    if (DEBUG_MODE) Serial.println("<CLEARED:FRONT_EMERGENCY>");
+                }
+                
+                if (backEmergencyStop && distB > SAFE_DISTANCE && distBL > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+                    backEmergencyStop = false;
+                    clearedAny = true;
+                    if (DEBUG_MODE) Serial.println("<CLEARED:BACK_EMERGENCY>");
+                }
+                
+                if (leftEmergencyStop && distFL > SAFE_DISTANCE && distBL > SAFE_DISTANCE) {
+                    leftEmergencyStop = false;
+                    clearedAny = true;
+                    if (DEBUG_MODE) Serial.println("<CLEARED:LEFT_EMERGENCY>");
+                }
+                
+                if (rightEmergencyStop && distFR > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+                    rightEmergencyStop = false;
+                    clearedAny = true;
+                    if (DEBUG_MODE) Serial.println("<CLEARED:RIGHT_EMERGENCY>");
+                }
+                
+                // Send appropriate acknowledgment for clearing all directions
+                if (clearedAny) {
+                    Serial.println("<ACK:STOP:EMERGENCY_PARTLY_CLEARED>");
+                } else {
+                    Serial.println("<ACK:STOP:NO_CHANGE>");
+                }
+            } 
+            else {
+                Serial.println("<ERR:Invalid CLEAR direction>");
+            }
+        } 
+        else {
+            // Default behavior: try to clear all emergency stops if obstacles are no longer present
+            bool clearedAny = false;
+            
+            if (frontEmergencyStop && distF > SAFE_DISTANCE && distFL > SAFE_DISTANCE && distFR > SAFE_DISTANCE) {
+                frontEmergencyStop = false;
+                clearedAny = true;
+                if (DEBUG_MODE) Serial.println("<CLEARED:FRONT_EMERGENCY>");
+            }
+            
+            if (backEmergencyStop && distB > SAFE_DISTANCE && distBL > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+                backEmergencyStop = false;
+                clearedAny = true;
+                if (DEBUG_MODE) Serial.println("<CLEARED:BACK_EMERGENCY>");
+            }
+            
+            if (leftEmergencyStop && distFL > SAFE_DISTANCE && distBL > SAFE_DISTANCE) {
+                leftEmergencyStop = false;
+                clearedAny = true;
+                if (DEBUG_MODE) Serial.println("<CLEARED:LEFT_EMERGENCY>");
+            }
+            
+            if (rightEmergencyStop && distFR > SAFE_DISTANCE && distBR > SAFE_DISTANCE) {
+                rightEmergencyStop = false;
+                clearedAny = true;
+                if (DEBUG_MODE) Serial.println("<CLEARED:RIGHT_EMERGENCY>");
+            }
+            
+            // Send appropriate acknowledgment
+            if (clearedAny) {
+                Serial.println("<ACK:STOP:EMERGENCY_PARTLY_CLEARED>");
+            } else if (emergencyStop) {
+                Serial.println("<ACK:STOP:EMERGENCY_ACTIVE>");
+            } else {
+                Serial.println("<ACK:STOP>");
+            }
         }
         
         // Update the overall emergency flag
         emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
-        
-        // Send appropriate acknowledgment
-        if (clearedAny) {
-            Serial.println("<ACK:STOP:EMERGENCY_PARTLY_CLEARED>");
-        } else if (emergencyStop) {
-            Serial.println("<ACK:STOP:EMERGENCY_ACTIVE>");
-        } else {
-            Serial.println("<ACK:STOP>");
-        }
         return;
     } 
     
