@@ -333,20 +333,30 @@ class AprilTagUARTController:
             speed = 0
         else:
             if center_x < frame_center - tolerance:
-                direction = DIR_LEFT
-                # Reduce speed for turning
-                speed = max(self.min_speed, int(speed * 0.7))
-            elif center_x > frame_center + tolerance:
                 direction = DIR_RIGHT
-                # Reduce speed for turning
-                speed = max(self.min_speed, int(speed * 0.7))
+                # Calculate proportional speed based on how far off-center
+                offset_ratio = min(1.0, abs(center_x - frame_center) / (frame_width/4))
+                turn_factor = 0.25 + (0.25 * offset_ratio)  # 25-50% of speed
+                
+                # Further reduce turn speed when close to the tag
+                if distance_cm < 100:  # When closer than 1 meter
+                    turn_factor *= (distance_cm / 100)  # Slower turns when closer
+                    
+                speed = max(self.min_speed, int(speed * turn_factor))
+            elif center_x > frame_center + tolerance:
+                direction = DIR_LEFT
+                # Calculate proportional speed based on how far off-center
+                offset_ratio = min(1.0, abs(center_x - frame_center) / (frame_width/4))
+                turn_factor = 0.25 + (0.25 * offset_ratio)  # 25-50% of speed
+                
+                # Further reduce turn speed when close to the tag
+                if distance_cm < 100:  # When closer than 1 meter
+                    turn_factor *= (distance_cm / 100)  # Slower turns when closer
+                    
+                speed = max(self.min_speed, int(speed * turn_factor))
             else:
-                direction = DIR_FORWARD
-
-        if self.verbose:
-            logger.debug(
-                f"Distance: {distance_cm:.1f}cm, Direction: {direction_to_str(direction)}, Speed: {speed}")
-
+                direction = DIR_BACKWARD  # Changed from FORWARD to BACKWARD
+                
         return direction, speed
 
     def process_frame(self, frame):
@@ -576,21 +586,21 @@ class AprilTagUARTController:
         """Execute a search pattern to find the target tag if not immediately visible"""
         # Simple search pattern: rotate in place to scan surroundings
         search_patterns = [
-            (DIR_RIGHT, 5),   # Rotate right briefly
-            (DIR_STOP, 1),    # Stop to stabilize camera and detect
-            (DIR_RIGHT, 5),   # Rotate right more
-            (DIR_STOP, 1),    # Stop again
-            (DIR_RIGHT, 5),   # More rotation
+            (DIR_RIGHT, 5),
             (DIR_STOP, 1),
-            (DIR_LEFT, 20),   # Rotate left to cover a wider area
+            (DIR_RIGHT, 5),
             (DIR_STOP, 1),
-            (DIR_FORWARD, 5),  # Move forward a bit
+            (DIR_RIGHT, 5),
             (DIR_STOP, 1),
-            (DIR_RIGHT, 10),  # Rotate right to scan new area
+            (DIR_LEFT, 20),
             (DIR_STOP, 1),
-            (DIR_FORWARD, 10),  # Move forward more
+            (DIR_BACKWARD, 5),  # Changed from FORWARD to BACKWARD
             (DIR_STOP, 1),
-            (DIR_LEFT, 15),   # Rotate left to scan another area
+            (DIR_RIGHT, 10),
+            (DIR_STOP, 1),
+            (DIR_BACKWARD, 10),  # Changed from FORWARD to BACKWARD
+            (DIR_STOP, 1),
+            (DIR_LEFT, 15),
             (DIR_STOP, 1)
         ]
 
@@ -606,8 +616,9 @@ class AprilTagUARTController:
         # Create tag data for the search movement
         tag_data = TagData(
             tag_id=self.current_target_tag_id if self.current_target_tag_id else 0,
-            distance=100.0,  # Default distance for search movements
-            direction=direction
+            distance=100.0,
+            direction=direction,
+            speed=self.min_speed  # Always use minimum speed for search pattern
         )
 
         logger.info(
@@ -663,10 +674,18 @@ class AprilTagUARTController:
 
         # Implement a simple search pattern: square or circular
         if self.search_pattern_index < 4:
-            # Move in a square pattern
-            direction = [DIR_FORWARD, DIR_RIGHT, DIR_BACKWARD, DIR_LEFT]
-            self.communicator.send_direction(
-                direction[self.search_pattern_index])
+            # Move in a square pattern with reversed forward/backward
+            directions = [DIR_BACKWARD, DIR_LEFT, DIR_FORWARD, DIR_RIGHT]  # Changed FORWARD to BACKWARD and BACKWARD to FORWARD
+            direction = directions[self.search_pattern_index]
+            
+            # Use the correct method to send movement commands with reduced speed
+            tag_data = TagData(
+                tag_id=self.current_target_tag_id,
+                speed=int(self.min_speed * 0.7),  # Use 70% of minimum speed
+                direction=direction
+            )
+            self.communicator.send_tag_data(tag_data)
+            
             time.sleep(1)
             self.search_pattern_index += 1
         else:

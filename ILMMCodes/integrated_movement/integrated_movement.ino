@@ -48,17 +48,23 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 #define REN_BACK 51
 #define LEN_BACK 50 */
 
-// Motor Driver Pins CWW
-#define RPWM_RIGHT 6
-#define LPWM_RIGHT 7
+// Motor Driver Pins - Using COUNTER-CLOCKWISE arrangement from basic_moveset
+// The motors have been positioned as follows:
+// - LEFT wheel (pins 2, 3, 38, 39)
+// - RIGHT wheel (pins 7, 6, 51, 50)
+// - BACK wheel (pins 4, 5, 44, 45)
+#define RPWM_RIGHT 7 
+#define LPWM_RIGHT 6 
 #define REN_RIGHT 51
 #define LEN_RIGHT 50
-#define RPWM_LEFT 3
-#define LPWM_LEFT 2
-#define REN_LEFT 39
-#define LEN_LEFT 38
-#define RPWM_BACK 5
-#define LPWM_BACK 4
+
+#define RPWM_LEFT 2 
+#define LPWM_LEFT 3 
+#define REN_LEFT 38
+#define LEN_LEFT 39
+
+#define RPWM_BACK 4 
+#define LPWM_BACK 5 
 #define REN_BACK 44
 #define LEN_BACK 45
 
@@ -100,9 +106,9 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 #define ECHO_BR 27
 
 // === Enhanced Configuration ===
-const float CRITICAL_DISTANCE = 30.0;  // Emergency stop distance (cm)
-const float SLOW_DOWN_DISTANCE = 60.0; // Start slowing down distance (cm)
-const float SAFE_DISTANCE = 100.0;     // Safe operating distance (cm)
+const float CRITICAL_DISTANCE = 15.0;  // Emergency stop distance (cm)
+const float SLOW_DOWN_DISTANCE = 30.0; // Start slowing down distance (cm)
+const float SAFE_DISTANCE = 60.0;     // Safe operating distance (cm)
 const int REACTION_DELAY = 50;         // Milliseconds between updates
 
 // Ring buffer for commands
@@ -210,9 +216,11 @@ float calculateDynamicSpeed(float distance, float targetSpeed)
 void rotateLeft(int speed = MIN_SPEED)
 {
     if (DEBUG_MODE)
-        Serial.println("Rotating LEFT");
+        Serial.println("Rotating LEFT (CCW)");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+    
+    // Both wheels spin in the same direction to rotate in place
     moveMotor(motorLeft, FORWARD, speed);
     moveMotor(motorRight, FORWARD, speed);
 
@@ -230,9 +238,11 @@ void rotateLeft(int speed = MIN_SPEED)
 void rotateRight(int speed = MIN_SPEED)
 {
     if (DEBUG_MODE)
-        Serial.println("Rotating RIGHT");
+        Serial.println("Rotating RIGHT (CW)");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+    
+    // Both wheels spin in the same direction to rotate in place
     moveMotor(motorLeft, BACKWARD, speed);
     moveMotor(motorRight, BACKWARD, speed);
 
@@ -303,16 +313,19 @@ void executeMovement(int direction, int speed)
         speed = calculateDynamicSpeed(rightDist, speed);
     switch (direction)
     {
-    case 1: // FORWARD
+    case 1: // FORWARD 
         if (DEBUG_MODE)
             Serial.println("Moving FORWARD");
+        // Forward movement logic from basic_moveset
         moveMotor(motorLeft, BACKWARD, speed);
         moveMotor(motorRight, FORWARD, speed);
         moveMotor(motorBack, STOP, 0); // Back motor disabled for forward movement
         break;
+        
     case 2: // BACKWARD
         if (DEBUG_MODE)
             Serial.println("Moving BACKWARD");
+        // Backward movement logic from basic_moveset
         moveMotor(motorLeft, FORWARD, speed);
         moveMotor(motorRight, BACKWARD, speed);
         moveMotor(motorBack, STOP, 0); // Back motor disabled for backward movement
