@@ -147,9 +147,10 @@ class UARTCommunicator:
         """Set motor speed parameters"""
         # Validate speed parameters
         max_speed = max(50, min(255, max_speed))
-        min_speed = max(30, min(max_speed - 5, min_speed))  # Ensure at least 5 difference
+        # Ensure at least 5 difference
+        min_speed = max(30, min(max_speed - 5, min_speed))
 
-        # Store the values 
+        # Store the values
         self.max_speed = max_speed
         self.min_speed = min_speed
 

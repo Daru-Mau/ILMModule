@@ -21,10 +21,10 @@
 #define REN_RIGHT 51 // Kept original
 #define LEN_RIGHT 50 // Kept original
 
-#define RPWM_LEFT 9 // Updated to match configuration
+#define RPWM_LEFT 9  // Updated to match configuration
 #define LPWM_LEFT 10 // Updated to match configuration
-#define REN_LEFT 38 // Updated to match configuration
-#define LEN_LEFT 39 // Updated to match configuration
+#define REN_LEFT 38  // Updated to match configuration
+#define LEN_LEFT 39  // Updated to match configuration
 
 #define RPWM_BACK 4 // Updated to match configuration
 #define LPWM_BACK 5 // Updated to match configuration
@@ -114,9 +114,12 @@ void moveForward(int speed, bool use3Wheel)
     // Smooth acceleration for forward movement
     accelerateMotor(motorLeft, BACKWARD, speed);
     accelerateMotor(motorRight, FORWARD, speed);
-    if (use3Wheel) {
+    if (use3Wheel)
+    {
       accelerateMotor(motorBack, FORWARD, speed);
-    } else {
+    }
+    else
+    {
       moveMotor(motorBack, STOP, 0);
     }
   }
@@ -125,9 +128,12 @@ void moveForward(int speed, bool use3Wheel)
     // Regular instant movement
     moveMotor(motorLeft, BACKWARD, speed);
     moveMotor(motorRight, FORWARD, speed);
-    if (use3Wheel) {
+    if (use3Wheel)
+    {
       moveMotor(motorBack, FORWARD, speed);
-    } else {
+    }
+    else
+    {
       moveMotor(motorBack, STOP, 0);
     }
   }
@@ -140,9 +146,12 @@ void moveBackward(int speed, bool use3Wheel)
     // Smooth acceleration for backward movement
     accelerateMotor(motorLeft, FORWARD, speed);
     accelerateMotor(motorRight, BACKWARD, speed);
-    if (use3Wheel) {
+    if (use3Wheel)
+    {
       accelerateMotor(motorBack, BACKWARD, speed);
-    } else {
+    }
+    else
+    {
       moveMotor(motorBack, STOP, 0);
     }
   }
@@ -151,11 +160,46 @@ void moveBackward(int speed, bool use3Wheel)
     // Regular instant movement
     moveMotor(motorLeft, FORWARD, speed);
     moveMotor(motorRight, BACKWARD, speed);
-    if (use3Wheel) {
+    if (use3Wheel)
+    {
       moveMotor(motorBack, BACKWARD, speed);
-    } else {
+    }
+    else
+    {
       moveMotor(motorBack, STOP, 0);
     }
+  }
+}
+
+// Turn left (arc left) - both wheels forward but left slower
+void turnLeft(int speed, bool use3Wheel)
+{
+  moveMotor(motorLeft, BACKWARD, speed * 0.30);
+  moveMotor(motorRight, FORWARD, speed);
+
+  if (use3Wheel)
+  {
+    moveMotor(motorBack, FORWARD, speed * 0.75);
+  }
+  else
+  {
+    moveMotor(motorBack, STOP, 0);
+  }
+}
+
+// Turn right (arc right) -
+void turnRight(int speed, bool use3Wheel)
+{
+  moveMotor(motorLeft, BACKWARD, speed);
+  moveMotor(motorRight, FORWARD, speed * 0.30);
+
+  if (use3Wheel)
+  {
+    moveMotor(motorBack, FORWARD, speed * 0.75);
+  }
+  else
+  {
+    moveMotor(motorBack, STOP, 0);
   }
 }
 
@@ -164,7 +208,6 @@ void rotateLeft(int speed, bool use3Wheel)
 {
   if (use3Wheel)
   {
-    // In 3-wheel mode, all wheels contribute to rotation
     moveMotor(motorLeft, FORWARD, speed);
     moveMotor(motorRight, FORWARD, speed);
     moveMotor(motorBack, BACKWARD, speed);
@@ -172,8 +215,8 @@ void rotateLeft(int speed, bool use3Wheel)
   else
   {
     // In 2-wheel mode, only side wheels rotate
-    moveMotor(motorLeft, FORWARD, speed);
-    moveMotor(motorRight, FORWARD, speed*0.25);
+    moveMotor(motorLeft, FORWARD, speed * 1.30);
+    moveMotor(motorRight, FORWARD, speed * 0.30);
     moveMotor(motorBack, STOP, 0);
   }
 }
@@ -191,11 +234,12 @@ void rotateRight(int speed, bool use3Wheel)
   else
   {
     // In 2-wheel mode, only side wheels rotate
-    moveMotor(motorLeft, BACKWARD, speed*0.25);
-    moveMotor(motorRight, BACKWARD, speed);
+    moveMotor(motorLeft, BACKWARD, speed * 1.30);
+    moveMotor(motorRight, BACKWARD, speed * 0.30);
     moveMotor(motorBack, STOP, 0);
   }
 }
+
 // Slide left (strafe) - Updated with integrated movement logic
 void slideLeft(int speed, bool use3Wheel)
 {
@@ -227,42 +271,6 @@ void slideRight(int speed, bool use3Wheel)
   {
     // In 2-wheel mode, fall back to rotation
     rotateRight(speed, false);
-  }
-}
-
-// Turn left (arc left) - both wheels forward but left slower
-void turnLeft(int speed, bool use3Wheel)
-{
-  int reducedSpeed = speed * 0.5; // Left wheel at half speed
-
-  moveMotor(motorLeft, BACKWARD, reducedSpeed);
-  moveMotor(motorRight, FORWARD, speed);
-
-  if (use3Wheel)
-  {
-    moveMotor(motorBack, FORWARD, speed * 0.75);
-  }
-  else
-  {
-    moveMotor(motorBack, STOP, 0);
-  }
-}
-
-// Turn right (arc right) - both wheels forward but right slower
-void turnRight(int speed, bool use3Wheel)
-{
-  int reducedSpeed = speed * 0.5; // Right wheel at half speed
-
-  moveMotor(motorLeft, BACKWARD, speed);
-  moveMotor(motorRight, FORWARD, reducedSpeed);
-
-  if (use3Wheel)
-  {
-    moveMotor(motorBack, FORWARD, speed * 0.75);
-  }
-  else
-  {
-    moveMotor(motorBack, STOP, 0);
   }
 }
 
@@ -349,10 +357,10 @@ float calculateDynamicSpeed(float distance, float targetSpeed)
 {
   const float CRITICAL_DISTANCE = 15.0;  // Emergency stop distance (cm)
   const float SLOW_DOWN_DISTANCE = 30.0; // Start slowing down distance (cm)
-  
+
   if (distance <= CRITICAL_DISTANCE)
   {
-    return 0; // Emergency stop 
+    return 0; // Emergency stop
   }
   else if (distance <= SLOW_DOWN_DISTANCE)
   {
@@ -393,25 +401,57 @@ void parseCommand(const char *cmd)
   {
     switch (cmd[0])
     {
-    case 'F':
+    case 'W':
       Serial.println("Moving Forward");
       moveForward(userSpeed, use3WheelMode);
       break;
-    case 'B':
+    case 'S':
       Serial.println("Moving Backward");
       moveBackward(userSpeed, use3WheelMode);
       break;
-    case 'L':
+    case 'Q':
       Serial.println("Rotating Left");
       rotateLeft(userSpeed, use3WheelMode);
       break;
-    case 'R':
+    case 'E':
       Serial.println("Rotating Right");
       rotateRight(userSpeed, use3WheelMode);
       break;
-    case 'S':
+    case 'A':
+      Serial.println("Arc Turning Left");
+      turnLeft(userSpeed, use3WheelMode);
+      break;
+    case 'D':
+      Serial.println("Arc Turning Right");
+      turnRight(userSpeed, use3WheelMode);
+      break;
+    case '4':
+      Serial.println("Sliding Left");
+      slideLeft(userSpeed, use3WheelMode);
+      break;
+    case '6':
+      Serial.println("Sliding Right");
+      slideRight(userSpeed, use3WheelMode);
+      break;
+    case '5':
       Serial.println("Stopping");
       stopAllMotors();
+      break;
+    case '1':
+      Serial.println("Moving Diagonal Backward Left");
+      moveDiagonalBackwardLeft(userSpeed, use3WheelMode);
+      break;
+    case '3':
+      Serial.println("Moving Diagonal Backward Right");
+      moveDiagonalBackwardRight(userSpeed, use3WheelMode);
+      break;
+    case '7':
+      Serial.println("Moving Diagonal Forward Left");
+      moveDiagonalForwardLeft(userSpeed, use3WheelMode);
+      break;
+    case '9':
+      Serial.println("Moving Diagonal Forward Right");
+      moveDiagonalForwardRight(userSpeed, use3WheelMode);
       break;
     }
     return;
@@ -454,47 +494,50 @@ void parseCommand(const char *cmd)
     return;
   }
 
-// Check for MODE command (2-wheel vs 3-wheel)
-if (strncmp(cmd, "MODE:", 5) == 0)
-{
-  // Get the mode part and trim any whitespace
-  char modeStr[10] = {0};
-  strncpy(modeStr, cmd + 5, 9);
-  
-  // Convert to uppercase for comparison
-  for (int i = 0; modeStr[i]; i++) {
-    modeStr[i] = toupper(modeStr[i]);
-  }
-  
-  // Strip any spaces or control characters
-  char cleanMode[10] = {0};
-  int j = 0;
-  for (int i = 0; modeStr[i]; i++) {
-    if (modeStr[i] >= 'A' && modeStr[i] <= 'Z' || modeStr[i] >= '0' && modeStr[i] <= '9') {
-      cleanMode[j++] = modeStr[i];
+  // Check for MODE command (2-wheel vs 3-wheel)
+  if (strncmp(cmd, "MODE:", 5) == 0)
+  {
+    // Get the mode part and trim any whitespace
+    char modeStr[10] = {0};
+    strncpy(modeStr, cmd + 5, 9);
+
+    // Convert to uppercase for comparison
+    for (int i = 0; modeStr[i]; i++)
+    {
+      modeStr[i] = toupper(modeStr[i]);
     }
+
+    // Strip any spaces or control characters
+    char cleanMode[10] = {0};
+    int j = 0;
+    for (int i = 0; modeStr[i]; i++)
+    {
+      if (modeStr[i] >= 'A' && modeStr[i] <= 'Z' || modeStr[i] >= '0' && modeStr[i] <= '9')
+      {
+        cleanMode[j++] = modeStr[i];
+      }
+    }
+
+    // Handle both formats: "3WHEEL" and "1" (for 3-wheel mode)
+    if (strcmp(cleanMode, "3WHEEL") == 0 || strcmp(cleanMode, "1") == 0)
+    {
+      use3WheelMode = true;
+      Serial.println("Switched to 3-wheel mode (all wheels active)");
+    }
+    // Handle both formats: "2WHEEL" and "0" (for 2-wheel mode)
+    else if (strcmp(cleanMode, "2WHEEL") == 0 || strcmp(cleanMode, "0") == 0)
+    {
+      use3WheelMode = false;
+      Serial.println("Switched to 2-wheel mode (back wheel disabled)");
+    }
+    else
+    {
+      Serial.print("Current mode: ");
+      Serial.println(use3WheelMode ? "3-wheel (all wheels active)" : "2-wheel (back wheel disabled)");
+      Serial.println("Invalid mode format. Use MODE:2WHEEL, MODE:3WHEEL, MODE:0, or MODE:1");
+    }
+    return;
   }
-  
-  // Handle both formats: "3WHEEL" and "1" (for 3-wheel mode)
-  if (strcmp(cleanMode, "3WHEEL") == 0 || strcmp(cleanMode, "1") == 0)
-  {
-    use3WheelMode = true;
-    Serial.println("Switched to 3-wheel mode (all wheels active)");
-  }
-  // Handle both formats: "2WHEEL" and "0" (for 2-wheel mode)
-  else if (strcmp(cleanMode, "2WHEEL") == 0 || strcmp(cleanMode, "0") == 0)
-  {
-    use3WheelMode = false;
-    Serial.println("Switched to 2-wheel mode (back wheel disabled)");
-  }
-  else
-  {
-    Serial.print("Current mode: ");
-    Serial.println(use3WheelMode ? "3-wheel (all wheels active)" : "2-wheel (back wheel disabled)");
-    Serial.println("Invalid mode format. Use MODE:2WHEEL, MODE:3WHEEL, MODE:0, or MODE:1");
-  }
-  return;
-}
 
   // Check for SPEED command
   if (strncmp(cmd, "SPEED:", 6) == 0)
@@ -584,28 +627,28 @@ if (strncmp(cmd, "MODE:", 5) == 0)
   }
 
   // Special movement commands
-  if (strcmp(cmd, "SLIDE_LEFT") == 0)
+  if (strcmp(cmd, "4") == 0)
   {
     Serial.println("Sliding Left");
     slideLeft(userSpeed, use3WheelMode);
     return;
   }
 
-  if (strcmp(cmd, "SLIDE_RIGHT") == 0)
+  if (strcmp(cmd, "6") == 0)
   {
     Serial.println("Sliding Right");
     slideRight(userSpeed, use3WheelMode);
     return;
   }
 
-  if (strcmp(cmd, "TURN_LEFT") == 0)
+  if (strcmp(cmd, "A") == 0)
   {
     Serial.println("Turning Left");
     turnLeft(userSpeed, use3WheelMode);
     return;
   }
 
-  if (strcmp(cmd, "TURN_RIGHT") == 0)
+  if (strcmp(cmd, "D") == 0)
   {
     Serial.println("Turning Right");
     turnRight(userSpeed, use3WheelMode);
@@ -613,28 +656,28 @@ if (strncmp(cmd, "MODE:", 5) == 0)
   }
 
   // Diagonal movement commands
-  if (strcmp(cmd, "DIAG_F_LEFT") == 0)
+  if (strcmp(cmd, "7") == 0)
   {
     Serial.println("Moving Diagonal Forward Left");
     moveDiagonalForwardLeft(userSpeed, use3WheelMode);
     return;
   }
 
-  if (strcmp(cmd, "DIAG_F_RIGHT") == 0)
+  if (strcmp(cmd, "9") == 0)
   {
     Serial.println("Moving Diagonal Forward Right");
     moveDiagonalForwardRight(userSpeed, use3WheelMode);
     return;
   }
 
-  if (strcmp(cmd, "DIAG_B_LEFT") == 0)
+  if (strcmp(cmd, "1") == 0)
   {
     Serial.println("Moving Diagonal Backward Left");
     moveDiagonalBackwardLeft(userSpeed, use3WheelMode);
     return;
   }
 
-  if (strcmp(cmd, "DIAG_B_RIGHT") == 0)
+  if (strcmp(cmd, "3") == 0)
   {
     Serial.println("Moving Diagonal Backward Right");
     moveDiagonalBackwardRight(userSpeed, use3WheelMode);
@@ -651,70 +694,84 @@ void executeMovement(char direction, int speed, int tagId)
 
   switch (direction)
   {
-  case 'F':
+  case 'W':
     if (!isRotation)
     {
       Serial.println("Moving FORWARD");
       moveForward(speed, use3WheelMode);
     }
     break;
-  case 'B':
+  case 'S':
     if (!isRotation)
     {
       Serial.println("Moving BACKWARD");
       moveBackward(speed, use3WheelMode);
     }
     break;
-  case 'L':
+  case 'Q':
     if (isRotation)
     {
       Serial.println("Rotating LEFT (CCW)");
       rotateLeft(speed, use3WheelMode);
     }
     break;
-  case 'R':
+  case 'E':
     if (isRotation)
     {
       Serial.println("Rotating RIGHT (CW)");
       rotateRight(speed, use3WheelMode);
     }
     break;
-  case 'Q': // For diagonal forward-left
+  case 'A':
     if (!isRotation)
     {
-      Serial.println("Moving Diagonal Forward-Left");
-      moveDiagonalForwardLeft(speed, use3WheelMode);
+      Serial.println("Arc Turning LEFT");
+      turnLeft(speed, use3WheelMode);
     }
     break;
-  case 'E': // For diagonal forward-right
+  case 'D':
     if (!isRotation)
     {
-      Serial.println("Moving Diagonal Forward-Right");
-      moveDiagonalForwardRight(speed, use3WheelMode);
+      Serial.println("Arc Turning RIGHT");
+      turnRight(speed, use3WheelMode);
     }
     break;
-  case 'Z': // For diagonal backward-left
+  case '1':
     if (!isRotation)
     {
       Serial.println("Moving Diagonal Backward-Left");
       moveDiagonalBackwardLeft(speed, use3WheelMode);
     }
     break;
-  case 'C': // For diagonal backward-right
+  case '3':
     if (!isRotation)
     {
       Serial.println("Moving Diagonal Backward-Right");
       moveDiagonalBackwardRight(speed, use3WheelMode);
     }
     break;
-  case 'S':
+  case '4':
+    if (!isRotation)
+    {
+      Serial.println("Sliding LEFT");
+      slideLeft(speed, use3WheelMode);
+    }
+    break;
+
+  case '6':
+    if (!isRotation)
+    {
+      Serial.println("Sliding RIGHT");
+      slideRight(speed, use3WheelMode);
+    }
+    break;
+  case '5':
   default:
     Serial.println("STOP");
     stopAllMotors();
     break;
   }
 }
-
 // === Acceleration and Deceleration Functions ===
 
 // Global variables for smooth acceleration/deceleration
@@ -841,19 +898,35 @@ void setup()
   Serial.println("=========================");
   Serial.println("Enhanced Movement System Ready");
   Serial.println("Commands:");
-  Serial.println("F - Forward");
-  Serial.println("B - Backward");
-  Serial.println("L - Rotate Left");
-  Serial.println("R - Rotate Right");
-  Serial.println("S - Stop");
-  Serial.println("SLIDE_LEFT - Strafe Left");
-  Serial.println("SLIDE_RIGHT - Strafe Right");
-  Serial.println("TURN_LEFT - Arc Turn Left");
-  Serial.println("TURN_RIGHT - Arc Turn Right");
+  Serial.println("--- Basic Movement ---");
+  Serial.println("W - Forward");
+  Serial.println("A - Arc Turn Left");
+  Serial.println("D - Arc Turn Right");
+  Serial.println("S - Backward");
+  Serial.println("5 - Stop");
+  Serial.println("");
+  Serial.println("--- Turning ---");
+  Serial.println("Q - Rotate Left (or Diagonal Forward-Left with tag_id≠99)");
+  Serial.println("E - Rotate Right (or Diagonal Forward-Right with tag_id≠99)");
+  Serial.println("");
+  Serial.println("--- Diagonal Movement (Numpad) ---");
+  Serial.println("7 - Diagonal Forward-Left");
+  Serial.println("9 - Diagonal Forward-Right");
+  Serial.println("4 - Slide Left");
+  Serial.println("6 - Slide Right");
+  Serial.println("1 - Diagonal Backward-Left");
+  Serial.println("3 - Diagonal Backward-Right");
+  Serial.println("");
+  Serial.println("--- Configuration ---");
   Serial.println("MODE:2WHEEL - Use 2-wheel mode");
   Serial.println("MODE:3WHEEL - Use 3-wheel mode");
+  Serial.println("ACCEL:ON - Enable smooth acceleration");
+  Serial.println("ACCEL:OFF - Disable smooth acceleration");
   Serial.println("SPEED:<value> - Set speed (0-255)");
+  Serial.println("");
+  Serial.println("--- Special Commands ---");
   Serial.println("TAG:<tagId>,<speed>,<dir>[,<mode>] - TAG Command");
+  Serial.println("  Note: tag_id=99 enables rotation mode for Q/E");
   Serial.println("TEST - Run diagnostics");
   Serial.println("PING - Connectivity test");
   Serial.println("STOP - Stop all motors");
