@@ -150,9 +150,8 @@ class MotorTester:
         Send movement command in a specific direction
 
         Parameters:
-        - direction: 'F'(forward), 'B'(backward), 'L'(left), 'R'(right), 'CW'(clockwise), 'CCW'(counterclockwise)
-                     'FWL'(forward-left), 'FWR'(forward- \
-                           right), 'BWL'(backward-left), 'BWR'(backward-right)
+        - direction: 'W'(forward), 'S'(backward), 'A'(Turn left), 'R'(Turn right), '4'(Rotate Right), '6'(Rotate Left)
+                     '7'(Diagonal-forward_left), '9'(Diagonal-forward_right), '1'(Diagonal-backward_left), '3'(backward-backward_right)
         - distance: arbitrary units used by the Arduino for speed control
         - duration: how long to move in seconds
         """
@@ -309,7 +308,7 @@ class MotorTester:
 
         print("\n=== Motor Tests Completed ===")
         return True
-        
+
     def interactive_mode(self) -> None:
         """Run an interactive serial control session"""
         if hasattr(self, 'arduino') and hasattr(self.arduino, 'serial') and self.arduino.serial:
@@ -327,42 +326,49 @@ class MotorTester:
 
         print("\n==== Interactive Serial Control Mode ====")
         print("Available commands:")
-        print("  1. Send 'F' (forward)")
-        print("  2. Send 'B' (backward)")
-        print("  3. Send 'L' (left)")
-        print("  4. Send 'R' (right)")
-        print("  5. Send 'S' (stop)")
-        print("  6. Send 'TEST' command")
-        print("  7. Send TAG command")
-        print("  8. Custom command")
-        print("  9. Set acceleration (ON/OFF)")
-        print("  10. Diagonal movement")
-        print("  11. Set wheel mode (2WHEEL/3WHEEL)")
-        print("  12. Quit")
+        print("  W - (forward)")
+        print("  S - (backward)")
+        print("  A - (Turn left)")
+        print("  D - (Turn right)")
+        print("  Q - (Rotate left)")
+        print("  E - (Rotate right)")
+        print("  5 - (Stop)")
+        print("  4 - (Slide Left)")
+        print("  6 - (Slide Right)")
+        print("  7 - (Diagonal Forward-Left)")
+        print("  9 - (Diagonal Forward-Right")
+        print("  1 - (Diagonal Backward-Left")
+        print("  2 - (Diagonal Backward-Right)")
+        print("  T. Send 'TEST' command")
+        print("  TAG. Send TAG command")
+        print("  C. Custom command")
+        print("  ACC. Set acceleration (ON/OFF)")
+        print("  M. Set wheel mode (2WHEEL/3WHEEL)")
+        print("  Z. Quit")
 
         while True:
             try:
                 choice = input("\nEnter command number (1-12): ")
 
                 if choice == '1':
-                    print("Sending FORWARD ('F') command...")
-                    ser.write(b'F\r\n')
+                    print("Sending FORWARD ('W') command...")
+                    ser.write(b'W\r\n')
 
                 elif choice == '2':
-                    print("Sending BACKWARD ('B') command...")
-                    ser.write(b'B\r\n')
+                    print("Sending BACKWARD ('S') command...")
+                    ser.write(b'S\r\n')
 
                 elif choice == '3':
-                    print("Sending LEFT ('L') command...")
-                    ser.write(b'L\r\n')
+                    print("Sending LEFT ('A') command...")
+                    ser.write(b'A\r\n')
 
                 elif choice == '4':
-                    print("Sending RIGHT ('R') command...")
-                    ser.write(b'R\r\n')
+                    print("Sending RIGHT ('D') command...")
+                    ser.write(b'D\r\n')
 
                 elif choice == '5':
-                    print("Sending STOP ('S') command...")
-                    ser.write(b'S\r\n')
+                    print("Sending STOP ('5') command...")
+                    ser.write(b'5\r\n')
 
                 elif choice == '6':
                     print("Sending TEST command...")
@@ -433,7 +439,7 @@ class MotorTester:
                     cmd = f"TAG:0,{speed},{dir_code}\r\n"
                     print(f"Moving {dir_name} at speed {speed}...")
                     ser.write(cmd.encode())
-                    
+
                 elif choice == '11':
                     wheel_mode = input(
                         "Set wheel mode (2WHEEL/3WHEEL): ").upper()

@@ -11,7 +11,7 @@ from typing import Optional, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
-                   format='%(asctime)s - %(levelname)s - %(message)s')
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Serial communication settings
@@ -157,80 +157,81 @@ class ArduinoCommunicator:
         # Check for any response within timeout
         response = self._get_response(0.5)
         return len(response) > 0
-    
+
     def send_tag_data(self, tag_data: TagData) -> bool:
         """Send tag detection data to Arduino"""
         if not self.connected:
             return False
-        
+
         # Start with the basic format
         command = f"TAG:{tag_data.tag_id},{tag_data.distance},{tag_data.direction}"
-        
+
         # Add mode parameter if present
         if tag_data.mode:
             command += f",MODE:{tag_data.mode}"
-            
+
         # Add acceleration parameter if present
         if tag_data.acceleration:
             command += f",ACCEL:{tag_data.acceleration}"
-        
+
         # Add newline terminator
         command += "\n"
-        
+
         success = self._send_command(command)
-        
+
         if success:
             self.last_tag = tag_data
             response = self._get_response(0.2)
             if response:
                 logger.debug(f"Arduino response: {response}")
-            
+
         return success
-    
+
     def send_position(self, x: float, y: float, theta: float) -> bool:
         """Send position data to Arduino"""
         if not self.connected:
             return False
-        
+
         # Format: POS:x,y,theta
         command = f"POS:{x:.1f},{y:.1f},{theta:.3f}\n"
         success = self._send_command(command)
-        
+
         if success:
             self.last_position = (x, y, theta)
-            
+
         return success
-    
+
     def send_stop(self) -> bool:
         """Send stop command to Arduino"""
         return self._send_command("STOP\n")
-    
+
     def send_clear(self) -> bool:
         """Send clear tag data command to Arduino"""
         return self._send_command("CLEAR\n")
-        
+
     def set_speed(self, max_speed: int, min_speed: int) -> bool:
         """
         Set the maximum and minimum motor speeds on the Arduino
-        
+
         Parameters:
         - max_speed: The maximum motor speed (50-255)
         - min_speed: The minimum motor speed (30-max_speed)
-        
+
         Returns:
         - True if the command was sent successfully
         """
         # Ensure values are in valid ranges
         max_speed = max(50, min(255, max_speed))
         min_speed = max(30, min(max_speed, min_speed))
-        
+
         # Format the command
         command = f"SPEED:{max_speed},{min_speed}\n"
         success = self._send_command(command)
-        
+
         if success:
-            logger.info(f"Speed parameters sent: MAX={max_speed}, MIN={min_speed}")
-        
+            logger.info(
+                f"Speed parameters sent: MAX={max_speed}, MIN={min_speed}")
+
         return success
 
 
@@ -241,8 +242,9 @@ def main():
         # Send test command to verify Arduino is responding
         print("Sending TEST command to Arduino...")
         test_success = communicator.send_test_command()
-        print(f"Arduino TEST response: {'Successful' if test_success else 'Failed'}")
-        
+        print(
+            f"Arduino TEST response: {'Successful' if test_success else 'Failed'}")
+
         # Send test commands
         tag = TagData(tag_id=1, distance=50.0, direction='F')
         communicator.send_tag_data(tag)
