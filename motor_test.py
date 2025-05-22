@@ -348,33 +348,56 @@ class MotorTester:
 
         while True:
             try:
-                choice = input("\nEnter command number (1-12): ")
+                choice = input("\nEnter command number: ")
 
-                if choice == '1':
+                if choice == 'W':
                     print("Sending FORWARD ('W') command...")
                     ser.write(b'W\r\n')
 
-                elif choice == '2':
+                elif choice == 'A':
+                    print("Sending TURN_LEFT ('A') command...")
+                    ser.write(b'A\r\n')
+
+                elif choice == 'S':
                     print("Sending BACKWARD ('S') command...")
                     ser.write(b'S\r\n')
 
-                elif choice == '3':
-                    print("Sending LEFT ('A') command...")
-                    ser.write(b'A\r\n')
-
-                elif choice == '4':
-                    print("Sending RIGHT ('D') command...")
+                elif choice == 'D':
+                    print("Sending TURN_LEFT ('D') command...")
                     ser.write(b'D\r\n')
-
+                elif choice == 'Q':
+                    print("Sending ROTATE_LEFT ('Q') command...")
+                    ser.write(b'Q\r\n')
+                elif choice == 'E':
+                    print("Sending ROTATE_RIGHT ('E') command...")
+                    ser.write(b'E\r\n')
+                elif choice == '4':
+                    print("Sending SLIDE_LEFT ('4') command...")
+                    ser.write(b'4\r\n')
+                elif choice == '6':
+                    print("Sending SLIDE_RIGHT ('6') command...")
+                    ser.write(b'6\r\n')
+                elif choice == '7':
+                    print("Sending DIAGONAL_FORWARD_LEFT ('7') command...")
+                    ser.write(b'7\r\n')
+                elif choice == '9':
+                    print("Sending DIAGONAL_FORWARD_RIGHT ('9') command...")
+                    ser.write(b'9\r\n')
+                elif choice == '1':
+                    print("Sending DIAGONAL_BACKWARD_LEFT ('1') command...")
+                    ser.write(b'1\r\n')
+                elif choice == '2':
+                    print("Sending DIAGONAL_BACKWARD_RIGHT ('2') command...")
+                    ser.write(b'2\r\n')
                 elif choice == '5':
                     print("Sending STOP ('5') command...")
                     ser.write(b'5\r\n')
 
-                elif choice == '6':
+                elif choice == 'T':
                     print("Sending TEST command...")
                     ser.write(b'TEST\r\n')
 
-                elif choice == '7':
+                elif choice == 'TAG':
                     tag_id = input("Enter tag ID (default: 0): ") or "0"
                     distance = input(
                         "Enter distance/speed (default: 150): ") or "150"
@@ -389,7 +412,7 @@ class MotorTester:
                     print(f"Sending TAG command: {cmd.strip()}")
                     ser.write(cmd.encode())
 
-                elif choice == '8':
+                elif choice == 'C':
                     custom_cmd = input("Enter custom command: ")
                     if custom_cmd:
                         if not custom_cmd.endswith('\r\n'):
@@ -399,7 +422,7 @@ class MotorTester:
                     else:
                         print("Empty command, not sending.")
 
-                elif choice == '9':
+                elif choice == 'ACC':
                     accel_mode = input("Set acceleration (ON/OFF): ").upper()
                     if accel_mode not in ['ON', 'OFF']:
                         print("Invalid acceleration mode! Using OFF.")
@@ -409,49 +432,18 @@ class MotorTester:
                     print(f"Setting acceleration to: {accel_mode}")
                     ser.write(cmd.encode())
 
-                elif choice == '10':
-                    print("Diagonal Movement Options:")
-                    print("  1. Forward-Left (Q)")
-                    print("  2. Forward-Right (E)")
-                    print("  3. Backward-Left (Z)")
-                    print("  4. Backward-Right (C)")
-
-                    diag_choice = input("Enter diagonal option (1-4): ")
-
-                    if diag_choice == '1':
-                        dir_code = 'Q'
-                        dir_name = "Forward-Left"
-                    elif diag_choice == '2':
-                        dir_code = 'E'
-                        dir_name = "Forward-Right"
-                    elif diag_choice == '3':
-                        dir_code = 'Z'
-                        dir_name = "Backward-Left"
-                    elif diag_choice == '4':
-                        dir_code = 'C'
-                        dir_name = "Backward-Right"
-                    else:
-                        print("Invalid choice, using Forward-Left.")
-                        dir_code = 'Q'
-                        dir_name = "Forward-Left"
-
-                    speed = input("Enter speed (default: 150): ") or "150"
-                    cmd = f"TAG:0,{speed},{dir_code}\r\n"
-                    print(f"Moving {dir_name} at speed {speed}...")
-                    ser.write(cmd.encode())
-
-                elif choice == '11':
+                elif choice == 'M':
                     wheel_mode = input(
                         "Set wheel mode (2WHEEL/3WHEEL): ").upper()
                     if wheel_mode not in ['2WHEEL', '3WHEEL']:
-                        print("Invalid wheel mode! Using 3WHEEL.")
-                        wheel_mode = '3WHEEL'
+                        print("Invalid wheel mode! Using 2WHEEL.")
+                        wheel_mode = '2WHEEL'
 
                     cmd = f"MODE:{wheel_mode}\r\n"
                     print(f"Setting wheel mode to: {wheel_mode}")
                     ser.write(cmd.encode())
 
-                elif choice == '12':
+                elif choice == 'Z':
                     print("Quitting...")
                     ser.write(b'S\r\n')  # Stop motors before exiting
                     break
