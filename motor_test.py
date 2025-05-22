@@ -361,9 +361,8 @@ class MotorTester:
                 elif choice == 'S':
                     print("Sending BACKWARD ('S') command...")
                     ser.write(b'S\r\n')
-
                 elif choice == 'D':
-                    print("Sending TURN_LEFT ('D') command...")
+                    print("Sending TURN_RIGHT ('D') command...")
                     ser.write(b'D\r\n')
                 elif choice == 'Q':
                     print("Sending ROTATE_LEFT ('Q') command...")
@@ -386,9 +385,9 @@ class MotorTester:
                 elif choice == '1':
                     print("Sending DIAGONAL_BACKWARD_LEFT ('1') command...")
                     ser.write(b'1\r\n')
-                elif choice == '2':
-                    print("Sending DIAGONAL_BACKWARD_RIGHT ('2') command...")
-                    ser.write(b'2\r\n')
+                elif choice == '3':
+                    print("Sending DIAGONAL_BACKWARD_RIGHT ('3') command...")
+                    ser.write(b'3\r\n')
                 elif choice == '5':
                     print("Sending STOP ('5') command...")
                     ser.write(b'5\r\n')

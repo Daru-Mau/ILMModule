@@ -33,7 +33,7 @@
 
 // Basic configuration
 const float OBSTACLE_DISTANCE = 15.0; // cm
-const int BASE_SPEED = 50;            // PWM value (0-255)
+const int BASE_SPEED = 80;            // PWM value (0-255)
 
 // New configuration options
 bool use3WheelMode = true;   // Default to 3-wheel mode
@@ -104,7 +104,7 @@ void stopAllMotors()
   moveMotor(motorBack, STOP, 0);
 }
 
-// ---------- MOVEMENT FUNCTIONS WITH 3-WHEEL SUPPORT ----------
+// ---------- MOVEMENT FUNCTIONS WITH 3-WHEEL/2-WHEEL SUPPORT ----------
 
 // Forward movement
 void moveForward(int speed, bool use3Wheel)
@@ -174,7 +174,7 @@ void moveBackward(int speed, bool use3Wheel)
 // Turn left (arc left) - both wheels forward but left slower
 void turnLeft(int speed, bool use3Wheel)
 {
-  moveMotor(motorLeft, BACKWARD, speed * 0.30);
+  moveMotor(motorLeft, BACKWARD, speed * 0.50);
   moveMotor(motorRight, FORWARD, speed);
 
   if (use3Wheel)
@@ -191,7 +191,7 @@ void turnLeft(int speed, bool use3Wheel)
 void turnRight(int speed, bool use3Wheel)
 {
   moveMotor(motorLeft, BACKWARD, speed);
-  moveMotor(motorRight, FORWARD, speed * 0.30);
+  moveMotor(motorRight, FORWARD, speed * 0.50);
 
   if (use3Wheel)
   {
@@ -404,57 +404,60 @@ void parseCommand(const char *cmd)
     case 'W':
       Serial.println("Moving Forward");
       moveForward(userSpeed, use3WheelMode);
-      break;
+      return;
     case 'S':
       Serial.println("Moving Backward");
       moveBackward(userSpeed, use3WheelMode);
-      break;
+      return;
     case 'Q':
+      // Q is used for rotation when tag_id=99, otherwise it's diagonal forward-left
+      // Default behavior without tag is rotation
       Serial.println("Rotating Left");
       rotateLeft(userSpeed, use3WheelMode);
-      break;
+      return;
     case 'E':
+      // E is used for rotation when tag_id=99, otherwise it's diagonal forward-right
+      // Default behavior without tag is rotation
       Serial.println("Rotating Right");
       rotateRight(userSpeed, use3WheelMode);
-      break;
+      return;
     case 'A':
       Serial.println("Arc Turning Left");
       turnLeft(userSpeed, use3WheelMode);
-      break;
+      return;
     case 'D':
       Serial.println("Arc Turning Right");
       turnRight(userSpeed, use3WheelMode);
-      break;
+      return;
     case '4':
       Serial.println("Sliding Left");
       slideLeft(userSpeed, use3WheelMode);
-      break;
+      return;
     case '6':
       Serial.println("Sliding Right");
       slideRight(userSpeed, use3WheelMode);
-      break;
+      return;
     case '5':
       Serial.println("Stopping");
       stopAllMotors();
-      break;
+      return;
     case '1':
       Serial.println("Moving Diagonal Backward Left");
       moveDiagonalBackwardLeft(userSpeed, use3WheelMode);
-      break;
+      return;
     case '3':
       Serial.println("Moving Diagonal Backward Right");
       moveDiagonalBackwardRight(userSpeed, use3WheelMode);
-      break;
+      return;
     case '7':
       Serial.println("Moving Diagonal Forward Left");
       moveDiagonalForwardLeft(userSpeed, use3WheelMode);
-      break;
+      return;
     case '9':
       Serial.println("Moving Diagonal Forward Right");
       moveDiagonalForwardRight(userSpeed, use3WheelMode);
-      break;
+      return;
     }
-    return;
   }
 
   // Check for TEST command
@@ -479,7 +482,7 @@ void parseCommand(const char *cmd)
   }
 
   // Check for STOP command
-  if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "S") == 0)
+  if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "5") == 0)
   {
     if (useSmoothAccel)
     {
@@ -576,7 +579,6 @@ void parseCommand(const char *cmd)
     }
     return;
   }
-
   // Handle TAG commands from motor_test.py
   if (strncmp(cmd, "TAG:", 4) == 0)
   {
@@ -623,64 +625,6 @@ void parseCommand(const char *cmd)
     {
       Serial.println("Invalid TAG format");
     }
-    return;
-  }
-
-  // Special movement commands
-  if (strcmp(cmd, "4") == 0)
-  {
-    Serial.println("Sliding Left");
-    slideLeft(userSpeed, use3WheelMode);
-    return;
-  }
-
-  if (strcmp(cmd, "6") == 0)
-  {
-    Serial.println("Sliding Right");
-    slideRight(userSpeed, use3WheelMode);
-    return;
-  }
-
-  if (strcmp(cmd, "A") == 0)
-  {
-    Serial.println("Turning Left");
-    turnLeft(userSpeed, use3WheelMode);
-    return;
-  }
-
-  if (strcmp(cmd, "D") == 0)
-  {
-    Serial.println("Turning Right");
-    turnRight(userSpeed, use3WheelMode);
-    return;
-  }
-
-  // Diagonal movement commands
-  if (strcmp(cmd, "7") == 0)
-  {
-    Serial.println("Moving Diagonal Forward Left");
-    moveDiagonalForwardLeft(userSpeed, use3WheelMode);
-    return;
-  }
-
-  if (strcmp(cmd, "9") == 0)
-  {
-    Serial.println("Moving Diagonal Forward Right");
-    moveDiagonalForwardRight(userSpeed, use3WheelMode);
-    return;
-  }
-
-  if (strcmp(cmd, "1") == 0)
-  {
-    Serial.println("Moving Diagonal Backward Left");
-    moveDiagonalBackwardLeft(userSpeed, use3WheelMode);
-    return;
-  }
-
-  if (strcmp(cmd, "3") == 0)
-  {
-    Serial.println("Moving Diagonal Backward Right");
-    moveDiagonalBackwardRight(userSpeed, use3WheelMode);
     return;
   }
 
