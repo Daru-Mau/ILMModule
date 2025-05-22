@@ -335,14 +335,16 @@ class AprilTagUARTController:
             if center_x < frame_center - tolerance:
                 direction = DIR_LEFT
                 # Calculate proportional speed based on how far off-center
-                offset_ratio = min(1.0, abs(center_x - frame_center) / (frame_width/4))
+                offset_ratio = min(
+                    1.0, abs(center_x - frame_center) / (frame_width/4))
                 turn_factor = 0.25 + (0.25 * offset_ratio)  # 25-50% of speed
                 speed = max(self.min_speed, int(speed * turn_factor))
             elif center_x > frame_center + tolerance:
                 direction = DIR_RIGHT
                 # Reduce speed for turning - LOWER VALUE
-                
-                speed = max(self.min_speed, int(speed * 0.4))  # Reduced from 0.7 to 0.4
+
+                # Reduced from 0.7 to 0.4
+                speed = max(self.min_speed, int(speed * 0.4))
             else:
                 direction = DIR_FORWARD  # Changed from FORWARD to BACKWARD
 
@@ -587,11 +589,11 @@ class AprilTagUARTController:
             (DIR_STOP, 1),
             (DIR_LEFT, 20),
             (DIR_STOP, 1),
-            (DIR_BACKWARD, 5),  # Changed from FORWARD to BACKWARD
+            (DIR_BACKWARD, 5),
             (DIR_STOP, 1),
             (DIR_RIGHT, 10),
             (DIR_STOP, 1),
-            (DIR_BACKWARD, 10),  # Changed from FORWARD to BACKWARD
+            (DIR_BACKWARD, 10),
             (DIR_STOP, 1),
             (DIR_LEFT, 15),
             (DIR_STOP, 1)
@@ -668,9 +670,10 @@ class AprilTagUARTController:
         # Implement a simple search pattern: square or circular
         if self.search_pattern_index < 4:
             # Move in a square pattern with reversed forward/backward
-            directions = [DIR_BACKWARD, DIR_LEFT, DIR_FORWARD, DIR_RIGHT]  # Changed FORWARD to BACKWARD and BACKWARD to FORWARD
+            # Changed FORWARD to BACKWARD and BACKWARD to FORWARD
+            directions = [DIR_BACKWARD, DIR_LEFT, DIR_FORWARD, DIR_RIGHT]
             direction = directions[self.search_pattern_index]
-            
+
             # Use the correct method to send movement commands with reduced speed
             tag_data = TagData(
                 tag_id=self.current_target_tag_id,
@@ -678,7 +681,7 @@ class AprilTagUARTController:
                 direction=direction
             )
             self.communicator.send_tag_data(tag_data)
-            
+
             time.sleep(1)
             self.search_pattern_index += 1
         else:

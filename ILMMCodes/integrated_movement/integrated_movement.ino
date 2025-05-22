@@ -59,20 +59,20 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 // - LEFT wheel (pins 2, 3, 38, 39)
 // - RIGHT wheel (pins 7, 6, 51, 50)
 // - BACK wheel (pins 4, 5, 44, 45)
-#define RPWM_RIGHT 7
-#define LPWM_RIGHT 6
-#define REN_RIGHT 51
-#define LEN_RIGHT 50
+#define RPWM_RIGHT 7 // Updated to match configuration
+#define LPWM_RIGHT 6 // Updated to match configuration
+#define REN_RIGHT 51 // Kept original
+#define LEN_RIGHT 50 // Kept original
 
-#define RPWM_LEFT 9
-#define LPWM_LEFT 10
-#define REN_LEFT 38
-#define LEN_LEFT 39
+#define RPWM_LEFT 9  // Updated to match configuration
+#define LPWM_LEFT 10 // Updated to match configuration
+#define REN_LEFT 38  // Updated to match configuration
+#define LEN_LEFT 39  // Updated to match configuration
 
-#define RPWM_BACK 4
-#define LPWM_BACK 5
-#define REN_BACK 44
-#define LEN_BACK 45
+#define RPWM_BACK 4 // Updated to match configuration
+#define LPWM_BACK 5 // Updated to match configuration
+#define REN_BACK 44 // Kept original
+#define LEN_BACK 45 // Kept original
 
 // Encoder Pins
 #define ENC_RIGHT_C1 40
@@ -201,16 +201,9 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
     {
         motor.currentSpeed = max(targetSpeed, motor.currentSpeed - MAX_SPEED * ACCEL_RATE);
     }
-    int speed = (int)motor.currentSpeed;
 
-    // Debug output for left motor operations
-    if (&motor == &motorLeft && DEBUG_MODE)
-    {
-        Serial.print("Left motor command: Dir=");
-        Serial.print(dir);
-        Serial.print(" Speed=");
-        Serial.println(speed);
-    }
+    int speed = (int)motor.currentSpeed;
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
     switch (dir)
     {
@@ -268,60 +261,48 @@ float calculateDynamicSpeed(float distance, float targetSpeed)
 // Rotation functions
 void rotateLeft(int speed = MIN_SPEED)
 {
-    // Check for leftEmergencyStop or rightEmergencyStop since rotation uses both sides
-    if (leftEmergencyStop || rightEmergencyStop)
-    {
-        if (DEBUG_MODE)
-            Serial.println("<ROTATION_BLOCKED:EMERGENCY_STOP>");
-        return;
-    }
-
     if (DEBUG_MODE)
         Serial.println("Rotating LEFT (CCW)");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
-    // Both wheels spin in the same direction to rotate in place
-    moveMotor(motorLeft, FORWARD, speed * 1.30);
-    moveMotor(motorRight, FORWARD, speed * 0.25);
-
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
     {
+        // Both wheels spin in the same direction to rotate in place
+        moveMotor(motorLeft, FORWARD, speed);
+        moveMotor(motorRight, FORWARD, speed);
         moveMotor(motorBack, BACKWARD, speed);
     }
     else
     {
+        // In 2-wheel mode, only side wheels rotate with adjusted speeds
+        moveMotor(motorLeft, FORWARD, speed * 1.30);
+        moveMotor(motorRight, FORWARD, speed * 0.30);
         moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
     }
 }
 
 void rotateRight(int speed = MIN_SPEED)
 {
-    // Check for leftEmergencyStop or rightEmergencyStop since rotation uses both sides
-    if (leftEmergencyStop || rightEmergencyStop)
-    {
-        if (DEBUG_MODE)
-            Serial.println("<ROTATION_BLOCKED:EMERGENCY_STOP>");
-        return;
-    }
-
     if (DEBUG_MODE)
         Serial.println("Rotating RIGHT (CW)");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
-    // Both wheels spin in the same direction to rotate in place
-    moveMotor(motorLeft, BACKWARD, speed * 0.25);
-    moveMotor(motorRight, BACKWARD, speed * 1.30);
-
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
     {
+        // Both wheels spin in the same direction to rotate in place
+        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorRight, BACKWARD, speed);
         moveMotor(motorBack, FORWARD, speed);
     }
     else
     {
+        // In 2-wheel mode, only side wheels rotate with adjusted speeds
+        moveMotor(motorLeft, BACKWARD, speed * 1.30);
+        moveMotor(motorRight, BACKWARD, speed * 0.30);
         moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
     }
 }
@@ -397,75 +378,71 @@ void executeMovement(int direction, int speed)
         speed = calculateDynamicSpeed(leftDist, speed);
     else if (direction == 6 && rightDist < SLOW_DOWN_DISTANCE)
         speed = calculateDynamicSpeed(rightDist, speed);
+    else if (direction == 7 && forwardDist < SLOW_DOWN_DISTANCE)
+        speed = calculateDynamicSpeed(forwardDist, speed);
+    else if (direction == 8 && forwardDist < SLOW_DOWN_DISTANCE)
+        speed = calculateDynamicSpeed(forwardDist, speed);
+    else if (direction == 9 && backwardDist < SLOW_DOWN_DISTANCE)
+        speed = calculateDynamicSpeed(backwardDist, speed);
+    else if (direction == 10 && backwardDist < SLOW_DOWN_DISTANCE)
+        speed = calculateDynamicSpeed(backwardDist, speed);
 
     switch (direction)
     {
     case 1: // FORWARD
-        if (DEBUG_MODE)
-            Serial.println("Moving FORWARD");
-        moveMotor(motorLeft, BACKWARD, speed);
-        moveMotor(motorRight, FORWARD, speed);
-        moveMotor(motorBack, STOP, 0);
+        moveForward(speed);
         break;
 
     case 2: // BACKWARD
-        if (DEBUG_MODE)
-            Serial.println("Moving BACKWARD");
-        moveMotor(motorLeft, FORWARD, speed);
-        moveMotor(motorRight, BACKWARD, speed);
-        moveMotor(motorBack, STOP, 0);
+        moveBackward(speed);
         break;
-    case 3: // LEFT LATERAL MOVEMENT
-        if (DEBUG_MODE)
-            Serial.println("Moving LEFT");
-        if (useThreeWheels)
-        {
-            // Three-wheel configuration for lateral movement
-            moveMotor(motorLeft, STOP, 0);
-            moveMotor(motorRight, BACKWARD, speed);
-            moveMotor(motorBack, FORWARD, speed);
-        }
-        else
-        {
-            // Two-wheel strafe approximation
-            moveMotor(motorLeft, FORWARD, speed);
-            moveMotor(motorRight, FORWARD, speed);
-            moveMotor(motorBack, STOP, 0);
-        }
+
+    case 3: // ARC TURN LEFT
+        turnLeft(speed);
         break;
-    case 4: // RIGHT LATERAL MOVEMENT
-        if (DEBUG_MODE)
-            Serial.println("Moving RIGHT");
-        if (useThreeWheels)
-        {
-            // Three-wheel configuration for lateral movement
-            moveMotor(motorLeft, BACKWARD, speed);
-            moveMotor(motorRight, STOP, 0);
-            moveMotor(motorBack, BACKWARD, speed);
-        }
-        else
-        {
-            // Two-wheel strafe approximation
-            moveMotor(motorLeft, BACKWARD, speed);
-            moveMotor(motorRight, BACKWARD, speed);
-            moveMotor(motorBack, STOP, 0);
-        }
+
+    case 4: // ARC TURN RIGHT
+        turnRight(speed);
         break;
-    case 5: // ROTATE LEFT
-        if (DEBUG_MODE)
-            Serial.println("Rotating LEFT");
+
+    case 5: // LEFT LATERAL MOVEMENT
+        slideLeft(speed);
+        break;
+
+    case 6: // RIGHT LATERAL MOVEMENT
+        slideRight(speed);
+        break;
+
+    case 7: // ROTATE LEFT
         rotateLeft(speed);
         break;
-    case 6: // ROTATE RIGHT
-        if (DEBUG_MODE)
-            Serial.println("Rotating RIGHT");
+
+    case 8: // ROTATE RIGHT
         rotateRight(speed);
         break;
+
+    case 9: // DIAGONAL FORWARD-LEFT
+        moveDiagonalForwardLeft(speed);
+        break;
+
+    case 10: // DIAGONAL FORWARD-RIGHT
+        moveDiagonalForwardRight(speed);
+        break;
+
+    case 11: // DIAGONAL BACKWARD-LEFT
+        moveDiagonalBackwardLeft(speed);
+        break;
+
+    case 12: // DIAGONAL BACKWARD-RIGHT
+        moveDiagonalBackwardRight(speed);
+        break;
+
     case 0: // STOP
         if (DEBUG_MODE)
             Serial.println("Stopping all motors");
         stopAllMotors();
         break;
+
     default:
         if (DEBUG_MODE)
             Serial.println("Unknown direction code");
@@ -813,9 +790,228 @@ void testMotors()
     Serial.println("<MOTOR TEST COMPLETE>");
 }
 
+// Function to implement forward movement with 2/3 wheel mode support
+void moveForward(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Moving FORWARD");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    // Regular movement
+    moveMotor(motorLeft, BACKWARD, speed);
+    moveMotor(motorRight, FORWARD, speed);
+
+    if (useThreeWheels)
+    {
+        moveMotor(motorBack, FORWARD, speed);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0);
+    }
+}
+
+// Function to implement backward movement with 2/3 wheel mode support
+void moveBackward(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Moving BACKWARD");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    // Regular movement
+    moveMotor(motorLeft, FORWARD, speed);
+    moveMotor(motorRight, BACKWARD, speed);
+
+    if (useThreeWheels)
+    {
+        moveMotor(motorBack, BACKWARD, speed);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0);
+    }
+}
+
+// Turn left (arc left) - both wheels forward but left slower
+void turnLeft(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Arc Turning LEFT");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    moveMotor(motorLeft, BACKWARD, speed * 0.50);
+    moveMotor(motorRight, FORWARD, speed);
+
+    if (useThreeWheels)
+    {
+        moveMotor(motorBack, FORWARD, speed * 0.75);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0);
+    }
+}
+
+// Turn right (arc right) - both wheels forward but right slower
+void turnRight(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Arc Turning RIGHT");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    moveMotor(motorLeft, BACKWARD, speed);
+    moveMotor(motorRight, FORWARD, speed * 0.50);
+
+    if (useThreeWheels)
+    {
+        moveMotor(motorBack, FORWARD, speed * 0.75);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0);
+    }
+}
+
+// Slide left (strafe) - Updated with integrated movement logic
+void slideLeft(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Sliding LEFT");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    if (useThreeWheels)
+    {
+        // Three-wheel configuration for lateral movement
+        moveMotor(motorLeft, STOP, 0);
+        moveMotor(motorRight, BACKWARD, speed);
+        moveMotor(motorBack, FORWARD, speed);
+    }
+    else
+    {
+        // In 2-wheel mode, fall back to rotation
+        rotateLeft(speed);
+    }
+}
+
+// Slide right (strafe) - Updated with integrated movement logic
+void slideRight(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Sliding RIGHT");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    if (useThreeWheels)
+    {
+        // Three-wheel configuration for lateral movement
+        moveMotor(motorLeft, BACKWARD, speed);
+        moveMotor(motorRight, STOP, 0);
+        moveMotor(motorBack, BACKWARD, speed);
+    }
+    else
+    {
+        // In 2-wheel mode, fall back to rotation
+        rotateRight(speed);
+    }
+}
+
+// Forward Left Diagonal movement
+void moveDiagonalForwardLeft(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Moving Diagonal Forward-Left");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    // Left wheel minimal movement (reduced by 70%)
+    moveMotor(motorLeft, BACKWARD, speed * 0.3);
+    // Right wheel at full power
+    moveMotor(motorRight, FORWARD, speed);
+
+    if (useThreeWheels)
+    {
+        // Back wheel in between to achieve diagonal motion
+        moveMotor(motorBack, FORWARD, speed * 0.6);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+    }
+}
+
+// Forward Right Diagonal movement
+void moveDiagonalForwardRight(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Moving Diagonal Forward-Right");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    moveMotor(motorLeft, BACKWARD, speed);
+    moveMotor(motorRight, FORWARD, speed * 0.3);
+
+    if (useThreeWheels)
+    {
+        // Back wheel in between to achieve diagonal motion
+        moveMotor(motorBack, FORWARD, speed * 0.6);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+    }
+}
+
+// Backward Left Diagonal movement
+void moveDiagonalBackwardLeft(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Moving Diagonal Backward-Left");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    moveMotor(motorLeft, FORWARD, speed * 0.3);
+    moveMotor(motorRight, BACKWARD, speed);
+
+    if (useThreeWheels)
+    {
+        // Back wheel in between to achieve diagonal motion
+        moveMotor(motorBack, BACKWARD, speed * 0.6);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+    }
+}
+
+// Backward Right Diagonal movement
+void moveDiagonalBackwardRight(int speed)
+{
+    if (DEBUG_MODE)
+        Serial.println("Moving Diagonal Backward-Right");
+
+    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+
+    moveMotor(motorLeft, FORWARD, speed);
+    moveMotor(motorRight, BACKWARD, speed * 0.3);
+
+    if (useThreeWheels)
+    {
+        // Back wheel in between to achieve diagonal motion
+        moveMotor(motorBack, BACKWARD, speed * 0.6);
+    }
+    else
+    {
+        moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+    }
+}
 void loop()
 {
-    // Check if master override is active (via pin)
+    // ==== Check if master override is active (via pin) ====
     /*     checkOverridePin();
      */
     // If master override is active, only process I2C but not serial or motor commands
@@ -1250,12 +1446,24 @@ void parseCommand(const char *cmd)
         // Update the overall emergency flag
         emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
         return;
-    }
-
-    // Handle MOV command
+    } // Handle MOV command
     if (strcmp(command, "MOV") == 0)
     {
         // Parse movement parameters: direction,speed
+        // Direction codes:
+        // 0 = STOP
+        // 1 = FORWARD
+        // 2 = BACKWARD
+        // 3 = SLIDE LEFT (lateral movement)
+        // 4 = SLIDE RIGHT (lateral movement)
+        // 5 = ROTATE LEFT
+        // 6 = ROTATE RIGHT
+        // 7 = DIAGONAL FORWARD-LEFT
+        // 8 = DIAGONAL FORWARD-RIGHT
+        // 9 = DIAGONAL BACKWARD-LEFT
+        // 10 = DIAGONAL BACKWARD-RIGHT
+        // 11 = ARC TURN LEFT
+        // 12 = ARC TURN RIGHT
         int direction = 0;
         int speed = 0;
 
@@ -1415,6 +1623,78 @@ void parseCommand(const char *cmd)
         Serial.print(distBR);
         Serial.println(">");
         return;
+    }
+
+    // Handle single-character movement commands for direct control (matching basic_moveset.ino)
+    if (strlen(command) == 1)
+    {
+        switch (command[0])
+        {
+        case 'W': // Forward
+            executeMovement(1, MAX_SPEED);
+            Serial.println("<ACK:FORWARD>");
+            return;
+
+        case 'S': // Backward
+            executeMovement(2, MAX_SPEED);
+            Serial.println("<ACK:BACKWARD>");
+            return;
+
+        case 'A': // Arc Turn Left
+            executeMovement(11, MAX_SPEED);
+            Serial.println("<ACK:ARC_LEFT>");
+            return;
+
+        case 'D': // Arc Turn Right
+            executeMovement(12, MAX_SPEED);
+            Serial.println("<ACK:ARC_RIGHT>");
+            return;
+
+        case 'Q': // Rotate Left
+            executeMovement(5, MAX_SPEED);
+            Serial.println("<ACK:ROTATE_LEFT>");
+            return;
+
+        case 'E': // Rotate Right
+            executeMovement(6, MAX_SPEED);
+            Serial.println("<ACK:ROTATE_RIGHT>");
+            return;
+
+        case '4': // Slide Left
+            executeMovement(3, MAX_SPEED);
+            Serial.println("<ACK:SLIDE_LEFT>");
+            return;
+
+        case '6': // Slide Right
+            executeMovement(4, MAX_SPEED);
+            Serial.println("<ACK:SLIDE_RIGHT>");
+            return;
+
+        case '7': // Diagonal Forward-Left
+            executeMovement(7, MAX_SPEED);
+            Serial.println("<ACK:DIAG_FORWARD_LEFT>");
+            return;
+
+        case '9': // Diagonal Forward-Right
+            executeMovement(8, MAX_SPEED);
+            Serial.println("<ACK:DIAG_FORWARD_RIGHT>");
+            return;
+
+        case '1': // Diagonal Backward-Left
+            executeMovement(9, MAX_SPEED);
+            Serial.println("<ACK:DIAG_BACKWARD_LEFT>");
+            return;
+
+        case '3': // Diagonal Backward-Right
+            executeMovement(10, MAX_SPEED);
+            Serial.println("<ACK:DIAG_BACKWARD_RIGHT>");
+            return;
+
+        case '5': // Stop
+            executeMovement(0, 0);
+            Serial.println("<ACK:STOP>");
+            return;
+        }
     }
 
     // If we get here, command wasn't recognized
