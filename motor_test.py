@@ -400,13 +400,13 @@ class MotorTester:
                 elif choice == 'TAG':
                     tag_id = input("Enter tag ID (default: 0): ") or "0"
                     distance = input(
-                        "Enter distance/speed (default: 150): ") or "150"
+                        "Enter distance/speed (default: 100): ") or "100"
                     direction = input(
-                        "Enter direction (F,B,L,R,S,Q,E,Z,C): ").upper() or "F"
+                        "Enter direction (W,A,S,D,Q,E): ").upper() or "W"
 
-                    if direction not in ['F', 'B', 'L', 'R', 'S', 'Q', 'E', 'Z', 'C']:
-                        print("Invalid direction! Using F (forward).")
-                        direction = 'F'
+                    if direction not in ['W', 'A', 'S', 'D', 'Q', 'E']:
+                        print("Invalid direction! Using W (forward).")
+                        direction = 'W'
 
                     cmd = f"TAG:{tag_id},{distance},{direction}\r\n"
                     print(f"Sending TAG command: {cmd.strip()}")

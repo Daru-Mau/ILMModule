@@ -246,7 +246,7 @@ def main():
             f"Arduino TEST response: {'Successful' if test_success else 'Failed'}")
 
         # Send test commands
-        tag = TagData(tag_id=1, distance=50.0, direction='F')
+        tag = TagData(tag_id=1, distance=50.0, direction='W')
         communicator.send_tag_data(tag)
         time.sleep(1)
         communicator.send_position(100, 200, 1.5)
