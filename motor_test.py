@@ -361,33 +361,43 @@ class MotorTester:
                 elif choice == 'S':
                     print("Sending BACKWARD ('S') command...")
                     ser.write(b'S\r\n')
+                    
                 elif choice == 'D':
                     print("Sending TURN_RIGHT ('D') command...")
                     ser.write(b'D\r\n')
+                    
                 elif choice == 'Q':
                     print("Sending ROTATE_LEFT ('Q') command...")
                     ser.write(b'Q\r\n')
+                    
                 elif choice == 'E':
                     print("Sending ROTATE_RIGHT ('E') command...")
                     ser.write(b'E\r\n')
+                    
                 elif choice == '4':
                     print("Sending SLIDE_LEFT ('4') command...")
                     ser.write(b'4\r\n')
+                    
                 elif choice == '6':
                     print("Sending SLIDE_RIGHT ('6') command...")
                     ser.write(b'6\r\n')
+                    
                 elif choice == '7':
                     print("Sending DIAGONAL_FORWARD_LEFT ('7') command...")
                     ser.write(b'7\r\n')
+                    
                 elif choice == '9':
                     print("Sending DIAGONAL_FORWARD_RIGHT ('9') command...")
                     ser.write(b'9\r\n')
+                    
                 elif choice == '1':
                     print("Sending DIAGONAL_BACKWARD_LEFT ('1') command...")
                     ser.write(b'1\r\n')
+                    
                 elif choice == '3':
                     print("Sending DIAGONAL_BACKWARD_RIGHT ('3') command...")
                     ser.write(b'3\r\n')
+                    
                 elif choice == '5':
                     print("Sending STOP ('5') command...")
                     ser.write(b'5\r\n')
@@ -444,7 +454,7 @@ class MotorTester:
 
                 elif choice == 'Z':
                     print("Quitting...")
-                    ser.write(b'S\r\n')  # Stop motors before exiting
+                    ser.write(b'5\r\n')  # Stop motors before exiting
                     break
 
                 else:

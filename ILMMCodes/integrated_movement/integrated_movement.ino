@@ -41,14 +41,14 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 // === Pin Definitions === (Combined from both sketches)
 
 /* // Motor Driver Pins
-#define RPWM_RIGHT 2  // FIXED: Swapped to match basic_moveset.ino
-#define LPWM_RIGHT 3  // FIXED: Swapped to match basic_moveset.ino
-#define REN_RIGHT 39
-#define LEN_RIGHT 38
 #define RPWM_LEFT 5   // FIXED: Swapped to match basic_moveset.ino
 #define LPWM_LEFT 4   // FIXED: Swapped to match basic_moveset.ino
 #define REN_LEFT 44
 #define LEN_LEFT 45
+#define RPWM_RIGHT 2  // FIXED: Swapped to match basic_moveset.ino
+#define LPWM_RIGHT 3  // FIXED: Swapped to match basic_moveset.ino
+#define REN_RIGHT 39
+#define LEN_RIGHT 38
 #define RPWM_BACK 7
 #define LPWM_BACK 6
 #define REN_BACK 51
@@ -59,15 +59,16 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 // - LEFT wheel (pins 2, 3, 38, 39)
 // - RIGHT wheel (pins 7, 6, 51, 50)
 // - BACK wheel (pins 4, 5, 44, 45)
-#define RPWM_RIGHT 7 // Updated to match configuration
-#define LPWM_RIGHT 6 // Updated to match configuration
-#define REN_RIGHT 51 // Kept original
-#define LEN_RIGHT 50 // Kept original
 
-#define RPWM_LEFT 9  // Updated to match configuration
-#define LPWM_LEFT 10 // Updated to match configuration
-#define REN_LEFT 38  // Updated to match configuration
-#define LEN_LEFT 39  // Updated to match configuration
+#define RPWM_LEFT 7  
+#define LPWM_LEFT 6 
+#define REN_LEFT 38
+#define LEN_LEFT 39 
+
+#define RPWM_RIGHT 10
+#define LPWM_RIGHT 9
+#define REN_RIGHT 51 
+#define LEN_RIGHT 50 
 
 #define RPWM_BACK 4 // Updated to match configuration
 #define LPWM_BACK 5 // Updated to match configuration
@@ -405,20 +406,20 @@ void executeMovement(int direction, int speed)
         turnRight(speed);
         break;
 
-    case 5: // LEFT LATERAL MOVEMENT
-        slideLeft(speed);
-        break;
-
-    case 6: // RIGHT LATERAL MOVEMENT
-        slideRight(speed);
-        break;
-
-    case 7: // ROTATE LEFT
+    case 5: // ROTATE LEFT
         rotateLeft(speed);
         break;
 
-    case 8: // ROTATE RIGHT
+    case 6: // ROTATE RIGHT
         rotateRight(speed);
+        break;
+
+    case 7: // LEFT LATERAL MOVEMENT
+        slideLeft(speed);
+        break;
+
+    case 8: // RIGHT LATERAL MOVEMENT
+        slideRight(speed);
         break;
 
     case 9: // DIAGONAL FORWARD-LEFT
@@ -1451,19 +1452,19 @@ void parseCommand(const char *cmd)
     {
         // Parse movement parameters: direction,speed
         // Direction codes:
-        // 0 = STOP
         // 1 = FORWARD
         // 2 = BACKWARD
-        // 3 = SLIDE LEFT (lateral movement)
-        // 4 = SLIDE RIGHT (lateral movement)
+        // 3 = ARC TURN LEFT
+        // 4 = ARC TURN RIGHT
         // 5 = ROTATE LEFT
         // 6 = ROTATE RIGHT
-        // 7 = DIAGONAL FORWARD-LEFT
-        // 8 = DIAGONAL FORWARD-RIGHT
-        // 9 = DIAGONAL BACKWARD-LEFT
-        // 10 = DIAGONAL BACKWARD-RIGHT
-        // 11 = ARC TURN LEFT
-        // 12 = ARC TURN RIGHT
+        // 7 = SLIDE LEFT (lateral movement)
+        // 8 = SLIDE RIGHT (lateral movement)
+        // 9 = DIAGONAL FORWARD-LEFT
+        // 10 = DIAGONAL FORWARD-RIGHT
+        // 11 = DIAGONAL BACKWARD-LEFT
+        // 12 = DIAGONAL BACKWARD-RIGHT
+        // 0 = STOP
         int direction = 0;
         int speed = 0;
 
@@ -1641,12 +1642,12 @@ void parseCommand(const char *cmd)
             return;
 
         case 'A': // Arc Turn Left
-            executeMovement(11, MAX_SPEED);
+            executeMovement(3, MAX_SPEED);
             Serial.println("<ACK:ARC_LEFT>");
             return;
 
         case 'D': // Arc Turn Right
-            executeMovement(12, MAX_SPEED);
+            executeMovement(4, MAX_SPEED);
             Serial.println("<ACK:ARC_RIGHT>");
             return;
 
@@ -1661,32 +1662,32 @@ void parseCommand(const char *cmd)
             return;
 
         case '4': // Slide Left
-            executeMovement(3, MAX_SPEED);
+            executeMovement(7, MAX_SPEED);
             Serial.println("<ACK:SLIDE_LEFT>");
             return;
 
         case '6': // Slide Right
-            executeMovement(4, MAX_SPEED);
+            executeMovement(8, MAX_SPEED);
             Serial.println("<ACK:SLIDE_RIGHT>");
             return;
 
         case '7': // Diagonal Forward-Left
-            executeMovement(7, MAX_SPEED);
+            executeMovement(9, MAX_SPEED);
             Serial.println("<ACK:DIAG_FORWARD_LEFT>");
             return;
 
         case '9': // Diagonal Forward-Right
-            executeMovement(8, MAX_SPEED);
+            executeMovement(10, MAX_SPEED);
             Serial.println("<ACK:DIAG_FORWARD_RIGHT>");
             return;
 
         case '1': // Diagonal Backward-Left
-            executeMovement(9, MAX_SPEED);
+            executeMovement(11, MAX_SPEED);
             Serial.println("<ACK:DIAG_BACKWARD_LEFT>");
             return;
 
         case '3': // Diagonal Backward-Right
-            executeMovement(10, MAX_SPEED);
+            executeMovement(12, MAX_SPEED);
             Serial.println("<ACK:DIAG_BACKWARD_RIGHT>");
             return;
 

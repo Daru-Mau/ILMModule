@@ -645,6 +645,7 @@ void executeMovement(char direction, int speed, int tagId)
       moveForward(speed, use3WheelMode);
     }
     break;
+    
   case 'S':
     if (!isRotation)
     {
@@ -652,6 +653,7 @@ void executeMovement(char direction, int speed, int tagId)
       moveBackward(speed, use3WheelMode);
     }
     break;
+
   case 'Q':
     if (isRotation)
     {
@@ -659,6 +661,7 @@ void executeMovement(char direction, int speed, int tagId)
       rotateLeft(speed, use3WheelMode);
     }
     break;
+
   case 'E':
     if (isRotation)
     {
@@ -666,6 +669,7 @@ void executeMovement(char direction, int speed, int tagId)
       rotateRight(speed, use3WheelMode);
     }
     break;
+
   case 'A':
     if (!isRotation)
     {
@@ -673,6 +677,7 @@ void executeMovement(char direction, int speed, int tagId)
       turnLeft(speed, use3WheelMode);
     }
     break;
+
   case 'D':
     if (!isRotation)
     {
@@ -680,6 +685,7 @@ void executeMovement(char direction, int speed, int tagId)
       turnRight(speed, use3WheelMode);
     }
     break;
+
   case '1':
     if (!isRotation)
     {
@@ -687,6 +693,7 @@ void executeMovement(char direction, int speed, int tagId)
       moveDiagonalBackwardLeft(speed, use3WheelMode);
     }
     break;
+
   case '3':
     if (!isRotation)
     {
@@ -694,6 +701,7 @@ void executeMovement(char direction, int speed, int tagId)
       moveDiagonalBackwardRight(speed, use3WheelMode);
     }
     break;
+
   case '4':
     if (!isRotation)
     {
@@ -709,7 +717,12 @@ void executeMovement(char direction, int speed, int tagId)
       slideRight(speed, use3WheelMode);
     }
     break;
+
   case '5':
+    Serial.println("STOP");
+    stopAllMotors();
+    break;
+
   default:
     Serial.println("STOP");
     stopAllMotors();
