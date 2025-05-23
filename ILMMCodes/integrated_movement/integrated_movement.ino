@@ -26,6 +26,7 @@ bool prevMasterOverrideState = false; // To detect changes in override state
 // Changed from #define to global variables so they can be modified at runtime
 int MAX_SPEED = 100;
 int MIN_SPEED = 50;
+int MAX_ROTATION_SPEED = 65;  // Maximum speed for rotation to prevent escalation
 #define DEBUG_MODE false // Keep this false to prevent debug messages interfering with UART communication
 // Message framing characters for UART communication
 const char START_MARKER = '<';
@@ -193,7 +194,24 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
     digitalWrite(motor.REN, HIGH);
     digitalWrite(motor.LEN, HIGH);
 
-    targetSpeed = constrain(targetSpeed, 0, MAX_SPEED);
+    // Store the previous direction to detect changes
+    static Direction prevDirection[3] = {STOP, STOP, STOP};
+    Direction* prevDir = nullptr;
+    
+    // Determine which motor we're operating on to track its previous direction
+    if (&motor == &motorLeft) prevDir = &prevDirection[0];
+    else if (&motor == &motorRight) prevDir = &prevDirection[1];
+    else if (&motor == &motorBack) prevDir = &prevDirection[2];
+    
+    // If direction changed, reset speed accumulation for smoother transitions
+    if (prevDir && *prevDir != dir && *prevDir != STOP) {
+        motor.currentSpeed = 0;
+    }
+    
+    // Update the previous direction
+    if (prevDir) *prevDir = dir;
+
+    targetSpeed = constrain(targetSpeed, MIN_SPEED, MAX_SPEED);
     if (targetSpeed > motor.currentSpeed)
     {
         motor.currentSpeed = min(targetSpeed, motor.currentSpeed + MAX_SPEED * ACCEL_RATE);
@@ -266,8 +284,13 @@ void rotateLeft(int speed = MIN_SPEED)
     if (DEBUG_MODE)
         Serial.println("Rotating LEFT (CCW)");
 
-    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
-
+    // Apply rotation-specific speed limit to prevent escalation
+    speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
+    
+    // Reset current speeds to prevent accumulation from previous movements
+    motorLeft.currentSpeed = 0;
+    motorRight.currentSpeed = 0;
+    
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
     {
@@ -278,9 +301,12 @@ void rotateLeft(int speed = MIN_SPEED)
     }
     else
     {
-        // In 2-wheel mode, only side wheels rotate with adjusted speeds
-        moveMotor(motorLeft, FORWARD, speed * 1.30);
-        moveMotor(motorRight, FORWARD, speed * 0.70);
+        // In 2-wheel mode, use balanced speed ratios without escalating multipliers
+        int leftSpeed = speed;
+        int rightSpeed = speed;
+        
+        moveMotor(motorLeft, FORWARD, leftSpeed);
+        moveMotor(motorRight, FORWARD, rightSpeed);
         moveMotor(motorBack, STOP, 0); 
     }
 }
@@ -290,8 +316,13 @@ void rotateRight(int speed = MIN_SPEED)
     if (DEBUG_MODE)
         Serial.println("Rotating RIGHT (CW)");
 
-    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
-
+    // Apply rotation-specific speed limit to prevent escalation
+    speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
+    
+    // Reset current speeds to prevent accumulation from previous movements
+    motorLeft.currentSpeed = 0;
+    motorRight.currentSpeed = 0;
+    
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
     {
@@ -302,9 +333,12 @@ void rotateRight(int speed = MIN_SPEED)
     }
     else
     {
-        // In 2-wheel mode, only side wheels rotate with adjusted speeds
-        moveMotor(motorLeft, BACKWARD, speed * 1.30);
-        moveMotor(motorRight, BACKWARD, speed * 0.70);
+        // In 2-wheel mode, use balanced speed ratios without escalating multipliers
+        int leftSpeed = speed;
+        int rightSpeed = speed;
+        
+        moveMotor(motorLeft, BACKWARD, leftSpeed);
+        moveMotor(motorRight, BACKWARD, rightSpeed);
         moveMotor(motorBack, STOP, 0);
     }
 }
@@ -420,11 +454,13 @@ void executeMovement(int direction, int desiredSpeed)
         break;
 
     case 5: // ROTATE LEFT
-        rotateLeft(safeSpeed);
+        // Apply rotation-specific speed limit for safety
+        rotateLeft(constrain(safeSpeed, MIN_SPEED, MAX_ROTATION_SPEED));
         break;
 
     case 6: // ROTATE RIGHT
-        rotateRight(safeSpeed);
+        // Apply rotation-specific speed limit for safety
+        rotateRight(constrain(safeSpeed, MIN_SPEED, MAX_ROTATION_SPEED));
         break;
 
     case 7: // LEFT LATERAL MOVEMENT
@@ -1502,6 +1538,9 @@ void parseCommand(const char *cmd)
 
         if (sscanf(params, "%d,%d", &direction, &speed) == 2)
         {
+            // Apply rotation speed limit for safety
+            speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
+            
             if (direction == 1)
             {
                 rotateLeft(speed);
@@ -1738,7 +1777,7 @@ void parseCommand(const char *cmd)
             Serial.println("<ACK:DIAG_BACKWARD_LEFT>");
             return;
 
-        case '3': // Diagonal Backward-Right
+        case '3': // Diagonal Backward-RIGHT
             executeMovement(12, MAX_SPEED);
             Serial.println("<ACK:DIAG_BACKWARD_RIGHT>");
             return;
