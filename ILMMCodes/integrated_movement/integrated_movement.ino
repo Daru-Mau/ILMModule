@@ -26,8 +26,8 @@ bool prevMasterOverrideState = false; // To detect changes in override state
 // Changed from #define to global variables so they can be modified at runtime
 int MAX_SPEED = 100;
 int MIN_SPEED = 50;
-int MAX_ROTATION_SPEED = 65;  // Maximum speed for rotation to prevent escalation
-#define DEBUG_MODE false // Keep this false to prevent debug messages interfering with UART communication
+int MAX_ROTATION_SPEED = 65; // Maximum speed for rotation to prevent escalation
+#define DEBUG_MODE false     // Keep this false to prevent debug messages interfering with UART communication
 // Message framing characters for UART communication
 const char START_MARKER = '<';
 const char END_MARKER = '>';
@@ -61,15 +61,15 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 // - RIGHT wheel (pins 7, 6, 51, 50)
 // - BACK wheel (pins 4, 5, 44, 45)
 
-#define RPWM_LEFT 7  
-#define LPWM_LEFT 6 
+#define RPWM_LEFT 7
+#define LPWM_LEFT 6
 #define REN_LEFT 38
-#define LEN_LEFT 39 
+#define LEN_LEFT 39
 
 #define RPWM_RIGHT 10
 #define LPWM_RIGHT 9
-#define REN_RIGHT 51 
-#define LEN_RIGHT 50 
+#define REN_RIGHT 51
+#define LEN_RIGHT 50
 
 #define RPWM_BACK 4 // Updated to match configuration
 #define LPWM_BACK 5 // Updated to match configuration
@@ -196,20 +196,25 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
 
     // Store the previous direction to detect changes
     static Direction prevDirection[3] = {STOP, STOP, STOP};
-    Direction* prevDir = nullptr;
-    
+    Direction *prevDir = nullptr;
+
     // Determine which motor we're operating on to track its previous direction
-    if (&motor == &motorLeft) prevDir = &prevDirection[0];
-    else if (&motor == &motorRight) prevDir = &prevDirection[1];
-    else if (&motor == &motorBack) prevDir = &prevDirection[2];
-    
+    if (&motor == &motorLeft)
+        prevDir = &prevDirection[0];
+    else if (&motor == &motorRight)
+        prevDir = &prevDirection[1];
+    else if (&motor == &motorBack)
+        prevDir = &prevDirection[2];
+
     // If direction changed, reset speed accumulation for smoother transitions
-    if (prevDir && *prevDir != dir && *prevDir != STOP) {
+    if (prevDir && *prevDir != dir && *prevDir != STOP)
+    {
         motor.currentSpeed = 0;
     }
-    
+
     // Update the previous direction
-    if (prevDir) *prevDir = dir;
+    if (prevDir)
+        *prevDir = dir;
 
     targetSpeed = constrain(targetSpeed, MIN_SPEED, MAX_SPEED);
     if (targetSpeed > motor.currentSpeed)
@@ -286,11 +291,11 @@ void rotateLeft(int speed = MIN_SPEED)
 
     // Apply rotation-specific speed limit to prevent escalation
     speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
-    
+
     // Reset current speeds to prevent accumulation from previous movements
     motorLeft.currentSpeed = 0;
     motorRight.currentSpeed = 0;
-    
+
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
     {
@@ -304,10 +309,10 @@ void rotateLeft(int speed = MIN_SPEED)
         // In 2-wheel mode, use balanced speed ratios without escalating multipliers
         int leftSpeed = speed;
         int rightSpeed = speed;
-        
+
         moveMotor(motorLeft, FORWARD, leftSpeed);
         moveMotor(motorRight, FORWARD, rightSpeed);
-        moveMotor(motorBack, STOP, 0); 
+        moveMotor(motorBack, STOP, 0);
     }
 }
 
@@ -318,11 +323,11 @@ void rotateRight(int speed = MIN_SPEED)
 
     // Apply rotation-specific speed limit to prevent escalation
     speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
-    
+
     // Reset current speeds to prevent accumulation from previous movements
     motorLeft.currentSpeed = 0;
     motorRight.currentSpeed = 0;
-    
+
     // Use back wheel if in 3-wheel configuration
     if (useThreeWheels)
     {
@@ -336,7 +341,7 @@ void rotateRight(int speed = MIN_SPEED)
         // In 2-wheel mode, use balanced speed ratios without escalating multipliers
         int leftSpeed = speed;
         int rightSpeed = speed;
-        
+
         moveMotor(motorLeft, BACKWARD, leftSpeed);
         moveMotor(motorRight, BACKWARD, rightSpeed);
         moveMotor(motorBack, STOP, 0);
@@ -396,7 +401,7 @@ void executeMovement(int direction, int desiredSpeed)
 
     // Prepare a safety-adjusted speed value starting with the desired speed
     int safeSpeed = desiredSpeed;
-    
+
     // Read distances for dynamic speed adjustment
     float forwardDist = min(min(distFL, distF), distFR);
     float backwardDist = min(min(distBL, distB), distBR);
@@ -427,7 +432,8 @@ void executeMovement(int direction, int desiredSpeed)
         safeSpeed = calculateDynamicSpeed(backwardDist, desiredSpeed);
 
     // Debug for safety adjustments
-    if (DEBUG_MODE && safeSpeed != desiredSpeed) {
+    if (DEBUG_MODE && safeSpeed != desiredSpeed)
+    {
         Serial.print("<SPEED_ADJUSTED:desired=");
         Serial.print(desiredSpeed);
         Serial.print(",safe=");
@@ -892,7 +898,7 @@ void turnLeft(int speed)
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
-    moveMotor(motorLeft, BACKWARD, speed*0.70);
+    moveMotor(motorLeft, BACKWARD, speed * 0.70);
     moveMotor(motorRight, FORWARD, speed);
 
     if (useThreeWheels)
@@ -905,7 +911,7 @@ void turnLeft(int speed)
     }
 }
 
-// Turn right (arc right) 
+// Turn right (arc right)
 void turnRight(int speed)
 {
     if (DEBUG_MODE)
@@ -1062,8 +1068,8 @@ void moveDiagonalBackwardRight(int speed)
 void loop()
 {
     // ==== Check if master override is active (via pin) ====
-    /*     checkOverridePin();
-     */
+    checkOverridePin();
+
     // If master override is active, only process I2C but not serial or motor commands
     if (masterOverrideActive)
     {
@@ -1540,7 +1546,7 @@ void parseCommand(const char *cmd)
         {
             // Apply rotation speed limit for safety
             speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
-            
+
             if (direction == 1)
             {
                 rotateLeft(speed);
@@ -1677,7 +1683,7 @@ void parseCommand(const char *cmd)
         Serial.println(">");
         return;
     }
-    
+
     // Handle TAG command for AprilTag tracking with separate distance and speed
     // Format: TAG:id,distance,direction,speed
     if (strcmp(command, "TAG") == 0)
@@ -1686,12 +1692,12 @@ void parseCommand(const char *cmd)
         float distance;
         int direction;
         int desiredSpeed;
-        
+
         if (sscanf(params, "%d,%f,%d,%d", &tagId, &distance, &direction, &desiredSpeed) == 4)
         {
             // Update our last tag update time
             lastTagUpdate = millis();
-            
+
             if (DEBUG_MODE)
             {
                 Serial.print("<TAG:ID=");
@@ -1702,12 +1708,12 @@ void parseCommand(const char *cmd)
                 Serial.print(desiredSpeed);
                 Serial.println(">");
             }
-            
+
             // Execute the movement using the direction and speed from the command
             // The executeMovement function will apply obstacle avoidance scaling
             // to the desired speed value when needed
             executeMovement(direction, desiredSpeed);
-            
+
             Serial.println("<ACK:TAG>");
         }
         else
