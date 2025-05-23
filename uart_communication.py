@@ -27,13 +27,14 @@ CMD_SPEED = 'SPEED'
 CMD_STOP = 'STOP'
 CMD_PING = 'PING'
 CMD_SENS = 'SENS'
+CMD_TAG = 'TAG'   # Command for AprilTag tracking with separate distance and speed
 
 # Direction codes
 DIR_STOP = 0
 DIR_FORWARD = 1
 DIR_BACKWARD = 2
-DIR_LEFT = 3
-DIR_RIGHT = 4
+DIR_TURN_LEFT = 3
+DIR_TURN_RIGHT = 4
 DIR_ROTATE_LEFT = 5
 DIR_ROTATE_RIGHT = 6
 
@@ -44,8 +45,8 @@ def get_direction_name(direction_code: int) -> str:
         DIR_STOP: "STOP",
         DIR_FORWARD: "FORWARD",
         DIR_BACKWARD: "BACKWARD",
-        DIR_LEFT: "LEFT",
-        DIR_RIGHT: "RIGHT",
+        DIR_TURN_LEFT: "TURN LEFT",
+        DIR_TURN_RIGHT: "TURN RIGHT",
         DIR_ROTATE_LEFT: "ROTATE LEFT",
         DIR_ROTATE_RIGHT: "ROTATE RIGHT"
     }.get(direction_code, "UNKNOWN")
@@ -54,11 +55,11 @@ def get_direction_name(direction_code: int) -> str:
 @dataclass
 class TagData:
     """Container for movement data from tag tracking"""
-    direction: int
-    speed: int
-    tag_id: int
-    distance: float = None
-    timestamp: float = None
+    direction: int                # Direction to move (see direction constants)
+    speed: int                    # Desired speed set by Python based on navigation goals 
+    tag_id: int                   # ID of the AprilTag being tracked
+    distance: float = None        # Physical distance to tag in cm (sent to Arduino for information)
+    timestamp: float = None       # When this command was generated
 
     def __post_init__(self):
         if self.timestamp is None:
@@ -66,7 +67,8 @@ class TagData:
 
     def __str__(self) -> str:
         """String representation for debugging"""
-        return f"Movement: Dir={get_direction_name(self.direction)}, Speed={self.speed}"
+        dist_str = f", Distance={self.distance:.1f}cm" if self.distance is not None else ""
+        return f"Movement: Dir={get_direction_name(self.direction)}, DesiredSpeed={self.speed}{dist_str}"
 
 
 class UARTCommunicator:
@@ -140,8 +142,16 @@ class UARTCommunicator:
         return self._send_command(command)
 
     def send_tag_data(self, tag_data: TagData) -> bool:
-        """Send movement data from tag tracking"""
-        return self.send_movement(tag_data.direction, tag_data.speed)
+        """Send movement data from tag tracking, with separate distance and desired speed"""
+        # If TAG command is needed, use it for proper distance+speed handling
+        if tag_data.distance is not None:
+            # Format: <TAG:id,distance,direction,desiredSpeed>
+            # Arduino will apply obstacle avoidance scaling to the desired speed if needed
+            command = f"{MSG_START}TAG:{tag_data.tag_id},{tag_data.distance:.1f},{tag_data.direction},{tag_data.speed}{MSG_END}"
+            return self._send_command(command)
+        else:
+            # Fallback to regular movement command if no distance data
+            return self.send_movement(tag_data.direction, tag_data.speed)
 
     def set_speed(self, max_speed: int, min_speed: int) -> bool:
         """Set motor speed parameters"""

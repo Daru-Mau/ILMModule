@@ -19,7 +19,7 @@ from typing import Optional, Tuple, List
 import logging
 
 # Import the UART communication module
-from uart_communication import UARTCommunicator, TagData, DIR_FORWARD, DIR_BACKWARD, DIR_LEFT, DIR_RIGHT, DIR_STOP, DIR_ROTATE_LEFT, DIR_ROTATE_RIGHT
+from uart_communication import UARTCommunicator, TagData, DIR_FORWARD, DIR_BACKWARD, DIR_TURN_LEFT, DIR_TURN_RIGHT, DIR_STOP, DIR_ROTATE_LEFT, DIR_ROTATE_RIGHT
 
 
 def direction_to_str(direction):
@@ -28,8 +28,8 @@ def direction_to_str(direction):
         DIR_STOP: "STOP",
         DIR_FORWARD: "FORWARD",
         DIR_BACKWARD: "BACKWARD",
-        DIR_LEFT: "LEFT",
-        DIR_RIGHT: "RIGHT",
+        DIR_TURN_LEFT: "TURN LEFT",
+        DIR_TURN_RIGHT: "TURN RIGHT",
         DIR_ROTATE_LEFT: "ROTATE LEFT",
         DIR_ROTATE_RIGHT: "ROTATE RIGHT"
     }.get(direction, "UNKNOWN")
@@ -68,6 +68,8 @@ CAM_CY = CAMERA_HEIGHT / 2
 ARDUINO_ENABLED = True
 DEFAULT_SERIAL_PORT = '/dev/ttyACM0'
 DEFAULT_BAUD_RATE = 115200
+DEFAULT_MAX_SPEED = 100
+DEFAULT_MIN_SPEED = 50
 
 # Detection settings
 VERBOSE = False
@@ -86,6 +88,7 @@ WORK_LOCATION_TAG_ID = 2  # Assume tag ID 2 is the work location
 DEFAULT_CHARGING_TIME = "19:30"  # Robot goes to charging station at 7:30 PM
 DEFAULT_WORK_TIME = "09:00"      # Robot goes to work location at 9:00 AM
 
+
 # === Global state ===
 shutdown_event = Event()
 
@@ -99,12 +102,13 @@ class AprilTagUARTController:
     def __init__(self,
                  port: Optional[str] = None,
                  baud_rate: int = DEFAULT_BAUD_RATE,
-                 max_speed: int = 100,
-                 min_speed: int = 50,
+                 max_speed: int = DEFAULT_MAX_SPEED,
+                 min_speed: int = DEFAULT_MIN_SPEED,
                  verbose: bool = False,
                  charging_time: str = DEFAULT_CHARGING_TIME,
                  work_time: str = DEFAULT_WORK_TIME,
                  use_three_wheels: bool = False):
+        
         """Initialize the controller with communication parameters"""
         self.port = port
         self.baud_rate = baud_rate
@@ -129,21 +133,25 @@ class AprilTagUARTController:
         if verbose:
             logger.setLevel(logging.DEBUG)
 
-    def calculate_dynamic_speed(self, distance_cm: float, base_speed: int) -> int:
-        """Calculate speed based on distance to target"""
+    def calculate_desired_speed(self, distance_cm: float, base_speed: int) -> int:
+        """Calculate desired speed based on distance to target
+        
+        This calculates the speed the robot should try to move at to reach the target.
+        The Arduino will apply additional safety scaling if obstacles are detected.
+        """
         if distance_cm < DISTANCE_THRESHOLD:
-            return 0  # Stop when too close
+            return 0  # Stop when too close to target
 
-        # Up to 2 meters away, scale speed linearly
+        # Up to 2 meters away, scale speed linearly (farther = faster)
         max_distance = 200  # cm
         speed_factor = min(distance_cm / max_distance, 1.0)
 
         # Calculate speed as percentage of range between min and max
-        speed = int(self.min_speed + (self.max_speed -
+        desired_speed = int(self.min_speed + (self.max_speed -
                     self.min_speed) * speed_factor)
 
         # Ensure speed doesn't exceed the max or go below the min
-        return max(self.min_speed, min(self.max_speed, speed))
+        return max(self.min_speed, min(self.max_speed, desired_speed))
 
     def setup(self) -> bool:
         """
@@ -324,8 +332,8 @@ class AprilTagUARTController:
         frame_center = frame_width / 2
         tolerance = frame_width * CENTER_TOLERANCE
 
-        # Calculate speed based on distance
-        speed = self.calculate_dynamic_speed(distance_cm, self.max_speed)
+        # Calculate desired speed based on distance to tag
+        speed = self.calculate_desired_speed(distance_cm, self.max_speed)
 
         # Determine direction
         if distance_cm < DISTANCE_THRESHOLD:
@@ -333,20 +341,20 @@ class AprilTagUARTController:
             speed = 0
         else:
             if center_x < frame_center - tolerance:
-                direction = DIR_LEFT
+                direction = DIR_ROTATE_LEFT
                 # Calculate proportional speed based on how far off-center
                 offset_ratio = min(
                     1.0, abs(center_x - frame_center) / (frame_width/4))
                 turn_factor = 0.25 + (0.25 * offset_ratio)  # 25-50% of speed
                 speed = max(self.min_speed, int(speed * turn_factor))
             elif center_x > frame_center + tolerance:
-                direction = DIR_RIGHT
+                direction = DIR_ROTATE_RIGHT
                 # Reduce speed for turning - LOWER VALUE
 
                 # Reduced from 0.7 to 0.4
                 speed = max(self.min_speed, int(speed * 0.4))
             else:
-                direction = DIR_FORWARD  # Changed from FORWARD to BACKWARD
+                direction = DIR_FORWARD 
 
         if self.verbose:
             logger.debug(
@@ -377,8 +385,17 @@ class AprilTagUARTController:
                 target_detection = matching_tags[0]
                 direction, speed = self.get_direction_and_speed(
                     target_detection, frame.shape[1])
-                tag_data = TagData(tag_id=target_detection.tag_id,
-                                   speed=speed, direction=direction)
+                
+                # Calculate actual distance to tag for obstacle avoidance
+                tag_size_px = self.estimate_tag_size(target_detection.corners)
+                distance_cm = self.calculate_distance(tag_size_px)
+                
+                tag_data = TagData(
+                    tag_id=target_detection.tag_id,
+                    speed=speed, 
+                    direction=direction,
+                    distance=distance_cm  # Include actual physical distance
+                )
                 self.communicator.send_tag_data(tag_data)
                 return
             elif not self.scheduled_task_timer or not self.scheduled_task_timer.is_alive():
@@ -397,8 +414,17 @@ class AprilTagUARTController:
             detections, key=lambda d: self.estimate_tag_size(d.corners))
         direction, speed = self.get_direction_and_speed(
             best_detection, frame.shape[1])
-        tag_data = TagData(tag_id=best_detection.tag_id,
-                           speed=speed, direction=direction)
+        
+        # Calculate actual distance to tag for obstacle avoidance
+        tag_size_px = self.estimate_tag_size(best_detection.corners)
+        distance_cm = self.calculate_distance(tag_size_px)
+        
+        tag_data = TagData(
+            tag_id=best_detection.tag_id,
+            speed=speed, 
+            direction=direction,
+            distance=distance_cm  # Include actual physical distance
+        )
         self.communicator.send_tag_data(tag_data)
 
     def run(self):
@@ -581,21 +607,21 @@ class AprilTagUARTController:
         """Execute a search pattern to find the target tag if not immediately visible"""
         # Simple search pattern: rotate in place to scan surroundings
         search_patterns = [
-            (DIR_RIGHT, 5),
+            (DIR_ROTATE_RIGHT, 5),
             (DIR_STOP, 1),
-            (DIR_RIGHT, 5),
+            (DIR_ROTATE_RIGHT, 5),
             (DIR_STOP, 1),
-            (DIR_RIGHT, 5),
+            (DIR_TURN_RIGHT, 5),
             (DIR_STOP, 1),
-            (DIR_LEFT, 20),
+            (DIR_TURN_LEFT, 20),
             (DIR_STOP, 1),
             (DIR_BACKWARD, 5),
             (DIR_STOP, 1),
-            (DIR_RIGHT, 10),
+            (DIR_TURN_RIGHT, 10),
             (DIR_STOP, 1),
             (DIR_BACKWARD, 10),
             (DIR_STOP, 1),
-            (DIR_LEFT, 15),
+            (DIR_ROTATE_LEFT, 15),
             (DIR_STOP, 1)
         ]
 
@@ -611,7 +637,7 @@ class AprilTagUARTController:
         # Create tag data for the search movement
         tag_data = TagData(
             tag_id=self.current_target_tag_id if self.current_target_tag_id else 0,
-            distance=100.0,
+            distance=100.0,  # Default distance for search movements
             direction=direction,
             speed=self.min_speed  # Always use minimum speed for search pattern
         )
@@ -623,13 +649,8 @@ class AprilTagUARTController:
         # Schedule next step in the search pattern after this step completes
         self.search_pattern_index += 1
         self.scheduled_task_timer = Timer(
-            duration, self.continue_search_pattern)
+            duration, self._next_search_step)
         self.scheduled_task_timer.start()
-        tag_data = TagData(
-            tag_id=99,  # Special ID for search movements
-            distance=float(self.max_speed),
-            direction=direction
-        )
 
         # Send movement command
         self.communicator.send_tag_data(tag_data)
@@ -671,14 +692,15 @@ class AprilTagUARTController:
         if self.search_pattern_index < 4:
             # Move in a square pattern with reversed forward/backward
             # Changed FORWARD to BACKWARD and BACKWARD to FORWARD
-            directions = [DIR_BACKWARD, DIR_LEFT, DIR_FORWARD, DIR_RIGHT]
+            directions = [DIR_BACKWARD, DIR_TURN_LEFT, DIR_FORWARD, DIR_TURN_RIGHT]
             direction = directions[self.search_pattern_index]
 
             # Use the correct method to send movement commands with reduced speed
             tag_data = TagData(
                 tag_id=self.current_target_tag_id,
                 speed=int(self.min_speed * 0.7),  # Use 70% of minimum speed
-                direction=direction
+                direction=direction,
+                distance=100.0  # Default search distance (far enough to not cause issues)
             )
             self.communicator.send_tag_data(tag_data)
 
@@ -711,10 +733,11 @@ def main():
                         help=f'Serial port (default: auto-detect)')
     parser.add_argument('--baud', type=int, default=DEFAULT_BAUD_RATE,
                         help=f'Baud rate (default: {DEFAULT_BAUD_RATE})')
-    parser.add_argument('--max-speed', type=int, default=100,
-                        help='Maximum motor speed (50-255)')
-    parser.add_argument('--min-speed', type=int, default=50,
-                        help='Minimum motor speed (30-max_speed)')
+    
+    parser.add_argument('--max-speed', type=int, default=DEFAULT_MAX_SPEED,
+                        help=f'Maximum motor speed (50-255) (default: {DEFAULT_MAX_SPEED})')
+    parser.add_argument('--min-speed', type=int, default=DEFAULT_MIN_SPEED,
+                        help=f'Minimum motor speed (30-max_speed) (default: {DEFAULT_MIN_SPEED})')
     parser.add_argument('--charging-time', type=str, default=DEFAULT_CHARGING_TIME,
                         help=f'Time to go to charging station, format HH:MM (default: {DEFAULT_CHARGING_TIME})')
     parser.add_argument('--work-time', type=str, default=DEFAULT_WORK_TIME,

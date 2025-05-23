@@ -236,27 +236,28 @@ void stopAllMotors()
     }
 }
 
-// Modified dynamic speed calculation to prioritize commanded speed
-float calculateDynamicSpeed(float distance, float targetSpeed)
+// Safety-focused dynamic speed calculation to scale down desired speed when obstacles detected
+float calculateDynamicSpeed(float distance, float desiredSpeed)
 {
     // Emergency stop for critical distances only
     if (distance <= CRITICAL_DISTANCE)
     {
-        return 0; // Emergency stop
+        return 0; // Emergency stop - safety first!
     }
-    // For slow down range, apply a gentler reduction that doesn't override commanded speed as much
+    // For slow down range, apply a progressive speed reduction based on proximity
     else if (distance <= SLOW_DOWN_DISTANCE)
     {
-        // Calculate reduction factor (0.5-1.0) based on how close to critical distance
-        float reductionFactor = 0.5 + (0.5 * (distance - CRITICAL_DISTANCE) / (SLOW_DOWN_DISTANCE - CRITICAL_DISTANCE));
+        // Calculate safety factor (0.5-1.0) based on distance from obstacle
+        // Closer to obstacle = lower safety factor
+        float safetyFactor = 0.5 + (0.5 * (distance - CRITICAL_DISTANCE) / (SLOW_DOWN_DISTANCE - CRITICAL_DISTANCE));
 
-        // Apply reduction but ensure we never go below MIN_SPEED
-        float reducedSpeed = targetSpeed * reductionFactor;
-        return max(MIN_SPEED, reducedSpeed);
+        // Apply safety reduction to desired speed but ensure we never go below MIN_SPEED
+        float safeSpeed = desiredSpeed * safetyFactor;
+        return max(MIN_SPEED, safeSpeed);
     }
 
-    // Outside of slow down range, use commanded speed directly
-    return targetSpeed;
+    // Outside of slow down range, the desired speed is already safe to use
+    return desiredSpeed;
 }
 
 // Rotation functions
@@ -279,8 +280,8 @@ void rotateLeft(int speed = MIN_SPEED)
     {
         // In 2-wheel mode, only side wheels rotate with adjusted speeds
         moveMotor(motorLeft, FORWARD, speed * 1.30);
-        moveMotor(motorRight, FORWARD, speed * 0.30);
-        moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+        moveMotor(motorRight, FORWARD, speed * 0.70);
+        moveMotor(motorBack, STOP, 0); 
     }
 }
 
@@ -303,12 +304,12 @@ void rotateRight(int speed = MIN_SPEED)
     {
         // In 2-wheel mode, only side wheels rotate with adjusted speeds
         moveMotor(motorLeft, BACKWARD, speed * 1.30);
-        moveMotor(motorRight, BACKWARD, speed * 0.30);
-        moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+        moveMotor(motorRight, BACKWARD, speed * 0.70);
+        moveMotor(motorBack, STOP, 0);
     }
 }
 
-void executeMovement(int direction, int speed)
+void executeMovement(int direction, int desiredSpeed)
 {
     // Check if master override active
     if (masterOverrideActive)
@@ -359,6 +360,9 @@ void executeMovement(int direction, int speed)
     // Make sure all motor enable pins are HIGH
     ensureMotorEnablePins();
 
+    // Prepare a safety-adjusted speed value starting with the desired speed
+    int safeSpeed = desiredSpeed;
+    
     // Read distances for dynamic speed adjustment
     float forwardDist = min(min(distFL, distF), distFR);
     float backwardDist = min(min(distBL, distB), distBR);
@@ -366,76 +370,85 @@ void executeMovement(int direction, int speed)
     float rightDist = min(distFR, distBR);
 
     // Only apply dynamic speed adjustment for really close obstacles
-    // Otherwise, let the Raspberry Pi control the speed directly
+    // This adjusts the desired speed for safety when obstacles are detected
     if (direction == 1 && forwardDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(forwardDist, speed);
+        safeSpeed = calculateDynamicSpeed(forwardDist, desiredSpeed);
     else if (direction == 2 && backwardDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(backwardDist, speed);
+        safeSpeed = calculateDynamicSpeed(backwardDist, desiredSpeed);
     else if (direction == 3 && leftDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(leftDist, speed);
+        safeSpeed = calculateDynamicSpeed(leftDist, desiredSpeed);
     else if (direction == 4 && rightDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(rightDist, speed);
+        safeSpeed = calculateDynamicSpeed(rightDist, desiredSpeed);
     else if (direction == 5 && leftDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(leftDist, speed);
+        safeSpeed = calculateDynamicSpeed(leftDist, desiredSpeed);
     else if (direction == 6 && rightDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(rightDist, speed);
+        safeSpeed = calculateDynamicSpeed(rightDist, desiredSpeed);
     else if (direction == 7 && forwardDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(forwardDist, speed);
+        safeSpeed = calculateDynamicSpeed(forwardDist, desiredSpeed);
     else if (direction == 8 && forwardDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(forwardDist, speed);
+        safeSpeed = calculateDynamicSpeed(forwardDist, desiredSpeed);
     else if (direction == 9 && backwardDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(backwardDist, speed);
+        safeSpeed = calculateDynamicSpeed(backwardDist, desiredSpeed);
     else if (direction == 10 && backwardDist < SLOW_DOWN_DISTANCE)
-        speed = calculateDynamicSpeed(backwardDist, speed);
+        safeSpeed = calculateDynamicSpeed(backwardDist, desiredSpeed);
+
+    // Debug for safety adjustments
+    if (DEBUG_MODE && safeSpeed != desiredSpeed) {
+        Serial.print("<SPEED_ADJUSTED:desired=");
+        Serial.print(desiredSpeed);
+        Serial.print(",safe=");
+        Serial.print(safeSpeed);
+        Serial.println(">");
+    }
 
     switch (direction)
     {
     case 1: // FORWARD
-        moveForward(speed);
+        moveForward(safeSpeed);
         break;
 
     case 2: // BACKWARD
-        moveBackward(speed);
+        moveBackward(safeSpeed);
         break;
 
     case 3: // ARC TURN LEFT
-        turnLeft(speed);
+        turnLeft(safeSpeed);
         break;
 
     case 4: // ARC TURN RIGHT
-        turnRight(speed);
+        turnRight(safeSpeed);
         break;
 
     case 5: // ROTATE LEFT
-        rotateLeft(speed);
+        rotateLeft(safeSpeed);
         break;
 
     case 6: // ROTATE RIGHT
-        rotateRight(speed);
+        rotateRight(safeSpeed);
         break;
 
     case 7: // LEFT LATERAL MOVEMENT
-        slideLeft(speed);
+        slideLeft(safeSpeed);
         break;
 
     case 8: // RIGHT LATERAL MOVEMENT
-        slideRight(speed);
+        slideRight(safeSpeed);
         break;
 
     case 9: // DIAGONAL FORWARD-LEFT
-        moveDiagonalForwardLeft(speed);
+        moveDiagonalForwardLeft(safeSpeed);
         break;
 
     case 10: // DIAGONAL FORWARD-RIGHT
-        moveDiagonalForwardRight(speed);
+        moveDiagonalForwardRight(safeSpeed);
         break;
 
     case 11: // DIAGONAL BACKWARD-LEFT
-        moveDiagonalBackwardLeft(speed);
+        moveDiagonalBackwardLeft(safeSpeed);
         break;
 
     case 12: // DIAGONAL BACKWARD-RIGHT
-        moveDiagonalBackwardRight(speed);
+        moveDiagonalBackwardRight(safeSpeed);
         break;
 
     case 0: // STOP
@@ -835,7 +848,7 @@ void moveBackward(int speed)
     }
 }
 
-// Turn left (arc left) - both wheels forward but left slower
+// Turn left (arc left)
 void turnLeft(int speed)
 {
     if (DEBUG_MODE)
@@ -843,7 +856,7 @@ void turnLeft(int speed)
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
-    moveMotor(motorLeft, BACKWARD, speed * 0.50);
+    moveMotor(motorLeft, BACKWARD, speed*0.70);
     moveMotor(motorRight, FORWARD, speed);
 
     if (useThreeWheels)
@@ -856,7 +869,7 @@ void turnLeft(int speed)
     }
 }
 
-// Turn right (arc right) - both wheels forward but right slower
+// Turn right (arc right) 
 void turnRight(int speed)
 {
     if (DEBUG_MODE)
@@ -865,7 +878,7 @@ void turnRight(int speed)
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
     moveMotor(motorLeft, BACKWARD, speed);
-    moveMotor(motorRight, FORWARD, speed * 0.50);
+    moveMotor(motorRight, FORWARD, speed * 0.70);
 
     if (useThreeWheels)
     {
@@ -1623,6 +1636,45 @@ void parseCommand(const char *cmd)
         Serial.print(",");
         Serial.print(distBR);
         Serial.println(">");
+        return;
+    }
+    
+    // Handle TAG command for AprilTag tracking with separate distance and speed
+    // Format: TAG:id,distance,direction,speed
+    if (strcmp(command, "TAG") == 0)
+    {
+        int tagId;
+        float distance;
+        int direction;
+        int desiredSpeed;
+        
+        if (sscanf(params, "%d,%f,%d,%d", &tagId, &distance, &direction, &desiredSpeed) == 4)
+        {
+            // Update our last tag update time
+            lastTagUpdate = millis();
+            
+            if (DEBUG_MODE)
+            {
+                Serial.print("<TAG:ID=");
+                Serial.print(tagId);
+                Serial.print(",D=");
+                Serial.print(distance);
+                Serial.print(",desiredSpeed=");
+                Serial.print(desiredSpeed);
+                Serial.println(">");
+            }
+            
+            // Execute the movement using the direction and speed from the command
+            // The executeMovement function will apply obstacle avoidance scaling
+            // to the desired speed value when needed
+            executeMovement(direction, desiredSpeed);
+            
+            Serial.println("<ACK:TAG>");
+        }
+        else
+        {
+            Serial.println("<ERR:Invalid TAG params>");
+        }
         return;
     }
 

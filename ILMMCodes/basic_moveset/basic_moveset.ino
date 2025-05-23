@@ -16,15 +16,15 @@
 // Motor direction logic has been adapted to accommodate this arrangement
 
 // Motor Driver Pins
-#define RPWM_RIGHT 7 // Updated to match configuration
-#define LPWM_RIGHT 6 // Updated to match configuration
-#define REN_RIGHT 51 // Kept original
-#define LEN_RIGHT 50 // Kept original
-
-#define RPWM_LEFT 9  // Updated to match configuration
-#define LPWM_LEFT 10 // Updated to match configuration
+#define RPWM_LEFT 7  // Updated to match configuration
+#define LPWM_LEFT 6 // Updated to match configuration
 #define REN_LEFT 38  // Updated to match configuration
 #define LEN_LEFT 39  // Updated to match configuration
+
+#define RPWM_RIGHT 10 // Updated to match configuration
+#define LPWM_RIGHT 9 // Updated to match configuration
+#define REN_RIGHT 51 // Kept original
+#define LEN_RIGHT 50 // Kept original
 
 #define RPWM_BACK 4 // Updated to match configuration
 #define LPWM_BACK 5 // Updated to match configuration
