@@ -13,6 +13,14 @@
 #include <Wire.h>
 #include <math.h>
 
+// Forward declarations of structs and enums
+struct Motor;
+enum Direction {
+    FORWARD,
+    BACKWARD,
+    STOP
+};
+
 // === I2C Configuration ===
 // Addresses for I2C communication
 #define MY_ADDR 0b100     // Localization module's 3-bit address (4 in decimal)
@@ -39,11 +47,37 @@ bool moduleReady = false;             // Flag to indicate if module is ready
 int MAX_SPEED = 100;
 int MIN_SPEED = 50;
 int MAX_ROTATION_SPEED = 65; // Maximum speed for rotation to prevent escalation
-#define DEBUG_MODE false     // Keep this false to prevent debug messages interfering with UART communication
+
+boolean DEBUG_MODE = false;     // Keep this false by default, but allow runtime changes
+
 // Message framing characters for UART communication
 const char START_MARKER = '<';
 const char END_MARKER = '>';
 const char ESCAPE_CHAR = '\\';
+
+// Helper function for debug messages
+void debugPrint(const char* message) {
+    if (DEBUG_MODE) {
+        Serial.print("<DEBUG:");
+        Serial.print(message);
+        Serial.println(">");
+    }
+}
+
+// Helper function for formatted debug messages
+void debugPrintf(const char* format, ...) {
+    if (DEBUG_MODE) {
+        char buffer[64];
+        va_list args;
+        va_start(args, format);
+        vsnprintf(buffer, sizeof(buffer), format, args);
+        va_end(args);
+        
+        Serial.print("<DEBUG:");
+        Serial.print(buffer);
+        Serial.println(">");
+    }
+}
 
 // Optimized movement parameters
 const float PID_KP = 2.0f;
@@ -87,6 +121,17 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 #define LPWM_BACK 5 // Updated to match configuration
 #define REN_BACK 44 // Kept original
 #define LEN_BACK 45 // Kept original
+
+// === Struct Definitions ===
+// Define these before any functions that use them
+struct Motor
+{
+    int RPWM;
+    int LPWM;
+    int REN;
+    int LEN;
+    float currentSpeed;
+};
 
 // Encoder Pins
 #define ENC_RIGHT_C1 40
@@ -142,35 +187,10 @@ unsigned long lastTagUpdate = 0;
 unsigned long lastSensorUpdate = 0;
 const unsigned long COMMAND_TIMEOUT = 1000; // 1 second timeout
 
-// === Globals ===
-bool emergencyStop = false;
-bool frontEmergencyStop = false; // Blocks forward movement
-bool backEmergencyStop = false;  // Blocks backward movement
-bool leftEmergencyStop = false;  // Blocks left movement
-bool rightEmergencyStop = false; // Blocks right movement
-float distFL, distF, distFR, distBL, distB, distBR;
-int movementMode = 0;        // 0=Normal, 1=Rotation
-bool useThreeWheels = false; // Flag to select between 2-wheel (false) and 3-wheel (true) configuration
-
-struct Motor
-{
-    int RPWM;
-    int LPWM;
-    int REN;
-    int LEN;
-    float currentSpeed;
-};
-
+// Initialize motor instances
 Motor motorRight = {RPWM_RIGHT, LPWM_RIGHT, REN_RIGHT, LEN_RIGHT, 0};
 Motor motorLeft = {RPWM_LEFT, LPWM_LEFT, REN_LEFT, LEN_LEFT, 0};
 Motor motorBack = {RPWM_BACK, LPWM_BACK, REN_BACK, LEN_BACK, 0};
-
-enum Direction
-{
-    FORWARD,
-    BACKWARD,
-    STOP
-};
 
 // Setup motor pins
 void setupMotorPins(Motor &motor)
@@ -182,6 +202,17 @@ void setupMotorPins(Motor &motor)
     digitalWrite(motor.REN, HIGH);
     digitalWrite(motor.LEN, HIGH);
 }
+
+// === Globals ===
+bool emergencyStop = false;
+bool frontEmergencyStop = false; // Blocks forward movement
+bool backEmergencyStop = false;  // Blocks backward movement
+bool leftEmergencyStop = false;  // Blocks left movement
+bool rightEmergencyStop = false; // Blocks right movement
+float distFL, distF, distFR, distBL, distB, distBR;
+int movementMode = 0;        // 0=Normal, 1=Rotation
+bool useThreeWheels = false; // Flag to select between 2-wheel (false) and 3-wheel (true) configuration
+
 
 // Function to ensure all motor enable pins are set to HIGH
 void ensureMotorEnablePins()
@@ -267,7 +298,7 @@ void stopAllMotors()
 
     if (masterOverrideActive && DEBUG_MODE)
     {
-        Serial.println("<STOPPED:MASTER_OVERRIDE>");
+        debugPrint("STOPPED:MASTER_OVERRIDE");
     }
 }
 
@@ -299,7 +330,7 @@ float calculateDynamicSpeed(float distance, float desiredSpeed)
 void rotateLeft(int speed = MIN_SPEED)
 {
     if (DEBUG_MODE)
-        Serial.println("Rotating LEFT (CCW)");
+        debugPrint("Rotating LEFT (CCW)");
 
     // Apply rotation-specific speed limit to prevent escalation
     speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
@@ -331,7 +362,7 @@ void rotateLeft(int speed = MIN_SPEED)
 void rotateRight(int speed = MIN_SPEED)
 {
     if (DEBUG_MODE)
-        Serial.println("Rotating RIGHT (CW)");
+        debugPrint("Rotating RIGHT (CW)");
 
     // Apply rotation-specific speed limit to prevent escalation
     speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
@@ -367,7 +398,7 @@ void executeMovement(int direction, int desiredSpeed)
     {
         if (DEBUG_MODE)
         {
-            Serial.println("<MOVEMENT_BLOCKED:MASTER_OVERRIDE>");
+            debugPrint("MOVEMENT_BLOCKED:MASTER_OVERRIDE");
         }
         return;
     }
@@ -382,26 +413,27 @@ void executeMovement(int direction, int desiredSpeed)
     {
         if (DEBUG_MODE)
         {
-            Serial.print("<MOVEMENT_BLOCKED:EMERGENCY_STOP_");
+            char blockMsg[40] = "MOVEMENT_BLOCKED:EMERGENCY_STOP_";
+            
             switch (direction)
             {
             case 1:
-                Serial.println("FORWARD>");
+                debugPrint("MOVEMENT_BLOCKED:EMERGENCY_STOP_FORWARD");
                 break;
             case 2:
-                Serial.println("BACKWARD>");
+                debugPrint("MOVEMENT_BLOCKED:EMERGENCY_STOP_BACKWARD");
                 break;
             case 3:
-                Serial.println("LEFT>");
+                debugPrint("MOVEMENT_BLOCKED:EMERGENCY_STOP_LEFT");
                 break;
             case 4:
-                Serial.println("RIGHT>");
+                debugPrint("MOVEMENT_BLOCKED:EMERGENCY_STOP_RIGHT");
                 break;
             case 5:
-                Serial.println("ROTATE_LEFT>");
+                debugPrint("MOVEMENT_BLOCKED:EMERGENCY_STOP_ROTATE_LEFT");
                 break;
             case 6:
-                Serial.println("ROTATE_RIGHT>");
+                debugPrint("MOVEMENT_BLOCKED:EMERGENCY_STOP_ROTATE_RIGHT");
                 break;
             }
         }
@@ -446,11 +478,9 @@ void executeMovement(int direction, int desiredSpeed)
     // Debug for safety adjustments
     if (DEBUG_MODE && safeSpeed != desiredSpeed)
     {
-        Serial.print("<SPEED_ADJUSTED:desired=");
-        Serial.print(desiredSpeed);
-        Serial.print(",safe=");
-        Serial.print(safeSpeed);
-        Serial.println(">");
+        char buffer[50];
+        sprintf(buffer, "SPEED_ADJUSTED:desired=%d,safe=%d", desiredSpeed, safeSpeed);
+        debugPrint(buffer);
     }
 
     switch (direction)
@@ -507,13 +537,13 @@ void executeMovement(int direction, int desiredSpeed)
 
     case 0: // STOP
         if (DEBUG_MODE)
-            Serial.println("Stopping all motors");
+            debugPrint("Stopping all motors");
         stopAllMotors();
         break;
 
     default:
         if (DEBUG_MODE)
-            Serial.println("Unknown direction code");
+            debugPrint("Unknown direction code");
         stopAllMotors();
         break;
     }
@@ -580,14 +610,17 @@ void updateDistances()
             if (newF < CRITICAL_DISTANCE || newFL < CRITICAL_DISTANCE || newFR < CRITICAL_DISTANCE ||
                 newB < CRITICAL_DISTANCE || newBL < CRITICAL_DISTANCE || newBR < CRITICAL_DISTANCE)
             {
-                Serial.print("<DEBUG:CRITICAL_DISTANCE:");
-                Serial.print(newFL < CRITICAL_DISTANCE ? "FL " : "");
-                Serial.print(newF < CRITICAL_DISTANCE ? "F " : "");
-                Serial.print(newFR < CRITICAL_DISTANCE ? "FR " : "");
-                Serial.print(newBL < CRITICAL_DISTANCE ? "BL " : "");
-                Serial.print(newB < CRITICAL_DISTANCE ? "B " : "");
-                Serial.print(newBR < CRITICAL_DISTANCE ? "BR" : "");
-                Serial.println(">");
+                String criticalSensors = "";
+                if (newFL < CRITICAL_DISTANCE) criticalSensors += "FL ";
+                if (newF < CRITICAL_DISTANCE) criticalSensors += "F ";
+                if (newFR < CRITICAL_DISTANCE) criticalSensors += "FR ";
+                if (newBL < CRITICAL_DISTANCE) criticalSensors += "BL ";
+                if (newB < CRITICAL_DISTANCE) criticalSensors += "B ";
+                if (newBR < CRITICAL_DISTANCE) criticalSensors += "BR";
+                
+                char buffer[100];
+                sprintf(buffer, "CRITICAL_DISTANCE:%s", criticalSensors.c_str());
+                debugPrint(buffer);
             }
             lastCriticalCheck = now;
         }
@@ -664,7 +697,7 @@ void receiveEvent(int howMany)
 
                 if (DEBUG_MODE)
                 {
-                    Serial.println("<I2C:SENT_READY_STATUS>");
+                    debugPrint("I2C:SENT_READY_STATUS");
                 }
             }
             break;
@@ -675,7 +708,7 @@ void receiveEvent(int howMany)
             stopAllMotors();
             if (DEBUG_MODE)
             {
-                Serial.println("<LOCALIZATION_MODULE:ENTERED_IDLE_MODE>");
+                debugPrint("LOCALIZATION_MODULE:ENTERED_IDLE_MODE");
             }
             break;
 
@@ -684,7 +717,7 @@ void receiveEvent(int howMany)
             masterOverrideActive = false;
             if (DEBUG_MODE)
             {
-                Serial.println("<LOCALIZATION_MODULE:ENTERED_ACTIVE_MODE>");
+                debugPrint("LOCALIZATION_MODULE:ENTERED_ACTIVE_MODE");
             }
             break;
 
@@ -692,9 +725,9 @@ void receiveEvent(int howMany)
             // Unknown command
             if (DEBUG_MODE)
             {
-                Serial.print("<LOCALIZATION_MODULE:UNKNOWN_CMD:");
-                Serial.print(cmd);
-                Serial.println(">");
+                char buffer[40];
+                sprintf(buffer, "LOCALIZATION_MODULE:UNKNOWN_CMD:%d", cmd);
+                debugPrint(buffer);
             }
             break;
         }
@@ -721,38 +754,33 @@ void requestEvent()
     // Add a debug log for the request event
     if (DEBUG_MODE)
     {
-        Serial.println("<LOCALIZATION_MODULE:REQUEST_EVENT_HANDLED>");
+        debugPrint("LOCALIZATION_MODULE:REQUEST_EVENT_HANDLED");
     }
 }
 
 // Function to check if override pin is active (alternative to I2C communication)
-void checkOverridePin()
-{
-    bool currentState = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == HIGH);
-
+void checkOverridePin() {
+    // When using INPUT_PULLUP, HIGH is the default (not pressed) state
+    // and LOW means the pin is actively pulled to ground (override active)
+    bool overrideActive = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == LOW);
+    
     // Detect changes in override state
-    if (currentState != prevMasterOverrideState)
-    {
-        if (currentState)
-        {
-            // Pin went high - activate override
+    if (overrideActive != masterOverrideActive) {
+        if (overrideActive) {
+            // Pin went LOW - activate override
             masterOverrideActive = true;
             stopAllMotors();
-            if (DEBUG_MODE)
-            {
-                Serial.println("<PIN:OVERRIDE_ACTIVE>");
+            if (DEBUG_MODE) {
+                debugPrint("PIN:OVERRIDE_ACTIVE");
             }
-        }
-        else
-        {
-            // Pin went low - release override
+        } else {
+            // Pin went HIGH - release override 
             masterOverrideActive = false;
-            if (DEBUG_MODE)
-            {
-                Serial.println("<PIN:OVERRIDE_RELEASED>");
+            if (DEBUG_MODE) {
+                debugPrint("PIN:OVERRIDE_RELEASED");
             }
         }
-        prevMasterOverrideState = currentState;
+        prevMasterOverrideState = overrideActive;
     }
 }
 
@@ -798,6 +826,17 @@ void setup()
     pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT_PULLUP); // Using internal pullup resistor
     prevMasterOverrideState = false;                // Force this to false
     masterOverrideActive = false;                   // Force override to be inactive
+    
+    // Force initial check to ensure correct state
+    bool initialOverrideState = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == LOW);
+    if (initialOverrideState) {
+        masterOverrideActive = true;
+        if (DEBUG_MODE) {
+            Serial.println("<WARNING:OVERRIDE_PIN_INITIALLY_ACTIVE>");
+        }
+    } else {
+        masterOverrideActive = false;
+    }
 
     // 5. Motor Test (optional)
     if (DEBUG_MODE)
@@ -903,13 +942,15 @@ void testMotors()
     moveMotor(motorBack, STOP, 0);
 
     Serial.println("<MOTOR TEST COMPLETE>");
+    Serial.println("<INFO:DEBUG mode can be activated with command 'DEBUG:1'>");
+    Serial.println("<INFO:DEBUG mode can be deactivated with command 'DEBUG:0'>");
 }
 
 // Function to implement forward movement with 2/3 wheel mode support
 void moveForward(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Moving FORWARD");
+        debugPrint("Moving FORWARD");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -931,7 +972,7 @@ void moveForward(int speed)
 void moveBackward(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Moving BACKWARD");
+        debugPrint("Moving BACKWARD");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -953,12 +994,12 @@ void moveBackward(int speed)
 void turnLeft(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Arc Turning LEFT");
+        debugPrint("Arc Turning LEFT");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
-    moveMotor(motorLeft, BACKWARD, speed * 0.70);
-    moveMotor(motorRight, FORWARD, speed);
+    moveMotor(motorLeft, BACKWARD, 0);
+    moveMotor(motorRight, FORWARD, speed * 0.70);
 
     if (useThreeWheels)
     {
@@ -974,12 +1015,12 @@ void turnLeft(int speed)
 void turnRight(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Arc Turning RIGHT");
+        debugPrint("Arc Turning RIGHT");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
-    moveMotor(motorLeft, BACKWARD, speed);
-    moveMotor(motorRight, FORWARD, speed * 0.70);
+    moveMotor(motorLeft, BACKWARD, speed*0.7);
+    moveMotor(motorRight, FORWARD, 0);
 
     if (useThreeWheels)
     {
@@ -995,7 +1036,7 @@ void turnRight(int speed)
 void slideLeft(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Sliding LEFT");
+        debugPrint("Sliding LEFT");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -1017,7 +1058,7 @@ void slideLeft(int speed)
 void slideRight(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Sliding RIGHT");
+        debugPrint("Sliding RIGHT");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -1039,7 +1080,7 @@ void slideRight(int speed)
 void moveDiagonalForwardLeft(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Moving Diagonal Forward-Left");
+        debugPrint("Moving Diagonal Forward-Left");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -1063,7 +1104,7 @@ void moveDiagonalForwardLeft(int speed)
 void moveDiagonalForwardRight(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Moving Diagonal Forward-Right");
+        debugPrint("Moving Diagonal Forward-Right");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -1085,7 +1126,7 @@ void moveDiagonalForwardRight(int speed)
 void moveDiagonalBackwardLeft(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Moving Diagonal Backward-Left");
+        debugPrint("Moving Diagonal Backward-Left");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -1107,7 +1148,7 @@ void moveDiagonalBackwardLeft(int speed)
 void moveDiagonalBackwardRight(int speed)
 {
     if (DEBUG_MODE)
-        Serial.println("Moving Diagonal Backward-Right");
+        debugPrint("Moving Diagonal Backward-Right");
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
@@ -1134,11 +1175,11 @@ void loop()
     {
         // Only report status periodically if in debug mode
         unsigned long now = millis();
-        static unsigned long lastOverrideStatus = 0;
-        if (DEBUG_MODE && (now - lastOverrideStatus > 5000))
+        static unsigned long lastMasterOverrideStatus = 0;
+        if (DEBUG_MODE && (now - lastMasterOverrideStatus > 30000)) // Only every 30 seconds
         {
-            Serial.println("<LOCALIZATION_MODULE:IDLE_MODE>");
-            lastOverrideStatus = now;
+            debugPrint("STATUS:MASTER_OVERRIDE_ACTIVE");
+            lastMasterOverrideStatus = now; // Actually update the timer
         }
 
         // When in master override mode, ensure all motors are stopped
@@ -1195,11 +1236,11 @@ void loop()
             frontEmergencyStop = frontDanger;
             if (frontEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_STOP:FRONT>");
+                debugPrint("EMERGENCY_STOP:FRONT");
             }
             else if (!frontEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_RELEASED:FRONT>");
+                debugPrint("EMERGENCY_RELEASED:FRONT");
             }
         }
 
@@ -1208,11 +1249,11 @@ void loop()
             backEmergencyStop = backDanger;
             if (backEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_STOP:BACK>");
+                debugPrint("EMERGENCY_STOP:BACK");
             }
             else if (!backEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_RELEASED:BACK>");
+                debugPrint("EMERGENCY_RELEASED:BACK");
             }
         }
 
@@ -1221,11 +1262,11 @@ void loop()
             leftEmergencyStop = leftDanger;
             if (leftEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_STOP:LEFT>");
+                debugPrint("EMERGENCY_STOP:LEFT");
             }
             else if (!leftEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_RELEASED:LEFT>");
+                debugPrint("EMERGENCY_RELEASED:LEFT");
             }
         }
 
@@ -1234,11 +1275,11 @@ void loop()
             rightEmergencyStop = rightDanger;
             if (rightEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_STOP:RIGHT>");
+                debugPrint("EMERGENCY_STOP:RIGHT");
             }
             else if (!rightEmergencyStop && DEBUG_MODE)
             {
-                Serial.println("<EMERGENCY_RELEASED:RIGHT>");
+                debugPrint("EMERGENCY_RELEASED:RIGHT");
             }
         }
 
@@ -1251,25 +1292,20 @@ void loop()
         // Just log the sensor information in debug mode
         if (emergencyStop && !prevEmergencyStop && DEBUG_MODE)
         {
-            Serial.print("Distances: FL=");
-            Serial.print(distFL);
-            Serial.print(" F=");
-            Serial.print(distF);
-            Serial.print(" FR=");
-            Serial.print(distFR);
-            Serial.print(" BL=");
-            Serial.print(distBL);
-            Serial.print(" B=");
-            Serial.print(distB);
-            Serial.print(" BR=");
-            Serial.println(distBR);
+            char buffer[100];
+            sprintf(buffer, "Distances: FL=%.1f F=%.1f FR=%.1f BL=%.1f B=%.1f BR=%.1f", 
+                    distFL, distF, distFR, distBL, distB, distBR);
+            debugPrint(buffer);
         }
 
-        // Only print status message in DEBUG_MODE
-        if (DEBUG_MODE && (now - lastTagUpdate > 5000))
+        // Only print status message in DEBUG_MODE, with properly tracked timing
+        static unsigned long lastStatusMessage = 0;
+        if (DEBUG_MODE && (now - lastStatusMessage > 30000)) // Only every 30 seconds
         {
-            Serial.print("State: ");
-            Serial.println(emergencyStop ? "EMERGENCY STOP" : "ACTIVE - Waiting for commands");
+            Serial.print("<STATUS:");
+            Serial.print(emergencyStop ? "EMERGENCY_STOP" : "ACTIVE");
+            Serial.println(">");
+            lastStatusMessage = now; // Actually update the timer
         }
     }
 }
@@ -1280,7 +1316,23 @@ void processSerialInput()
     static uint8_t index = 0;
     static boolean messageStarted = false;
     static boolean escapeNext = false;
-
+    static unsigned long bufferStartTime = 0;
+    
+    // Reset buffer if we've been waiting too long for a complete message
+    if (index > 0 && millis() - bufferStartTime > 1000) {
+        index = 0;
+        messageStarted = false;
+        escapeNext = false;
+        if (DEBUG_MODE) {
+            debugPrint("BUFFER_TIMEOUT_RESET");
+        }
+    }
+    
+    // Start timer when we begin filling the buffer
+    if (index == 0) {
+        bufferStartTime = millis();
+    }
+    
     while (Serial.available())
     {
         char c = Serial.read();
@@ -1393,54 +1445,6 @@ void parseCommand(const char *cmd)
     if (strcmp(command, "PING") == 0)
     {
         Serial.println("<ACK:PING>");
-        return;
-    }
-
-    // Special test command just for left motor debugging
-    if (strcmp(command, "TESTLEFT") == 0)
-    {
-        int speed = 80;
-        int direction = 0;
-
-        // Parse optional parameters if provided
-        if (params[0] != '\0')
-        {
-            sscanf(params, "%d,%d", &direction, &speed);
-        }
-
-        Serial.println("<DIRECT LEFT MOTOR TEST>");
-        // Direct pin control with verbose output
-        digitalWrite(motorLeft.REN, HIGH);
-        digitalWrite(motorLeft.LEN, HIGH);
-
-        Serial.print("Testing left motor: Direction=");
-        Serial.print(direction);
-        Serial.print(" Speed=");
-        Serial.println(speed);
-
-        if (direction == 0)
-        {
-            // Forward
-            Serial.println("LEFT MOTOR FORWARD");
-            analogWrite(motorLeft.RPWM, speed);
-            analogWrite(motorLeft.LPWM, 0);
-        }
-        else
-        {
-            // Backward
-            Serial.println("LEFT MOTOR BACKWARD");
-            analogWrite(motorLeft.RPWM, 0);
-            analogWrite(motorLeft.LPWM, speed);
-        }
-
-        delay(1000); // Run for 1 second
-
-        // Stop
-        Serial.println("LEFT MOTOR STOPPING");
-        analogWrite(motorLeft.RPWM, 0);
-        analogWrite(motorLeft.LPWM, 0);
-
-        Serial.println("<ACK:TESTLEFT>");
         return;
     }
 
@@ -1584,7 +1588,9 @@ void parseCommand(const char *cmd)
         // Update the overall emergency flag
         emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
         return;
-    } // Handle MOV command
+    } 
+    
+    // Handle MOV command
     if (strcmp(command, "MOV") == 0)
     {
         // Parse movement parameters: direction,speed
@@ -1650,7 +1656,9 @@ void parseCommand(const char *cmd)
             Serial.println("<ERR:Invalid ROT params>");
         }
         return;
-    } // Handle SPEED command
+    } 
+    
+    // Handle SPEED command
     if (strcmp(command, "SPEED") == 0)
     {
         // Parse speed parameters: max_speed,min_speed
@@ -1674,7 +1682,9 @@ void parseCommand(const char *cmd)
             Serial.println("<ERR:Invalid SPEED params>");
         }
         return;
-    } // Handle SENS command
+    } 
+    
+    // Handle SENS command
     if (strcmp(command, "SENS") == 0)
     {
         // Output sensor distances with proper message framing
@@ -1717,6 +1727,53 @@ void parseCommand(const char *cmd)
         else
         {
             Serial.println("<ERR:Invalid MODE param>");
+        }
+        return;
+    }
+
+    // Handle DEBUG command
+    if (strcmp(command, "DEBUG") == 0) {
+        // Parse debug parameter: 0 = off, 1 = on
+        int mode = 0;
+        
+        if (sscanf(params, "%d", &mode) == 1) {
+            DEBUG_MODE = (mode == 1);
+            Serial.print("<ACK:DEBUG:");
+            Serial.print(DEBUG_MODE ? "ENABLED" : "DISABLED");
+            Serial.println(">");
+            
+            // If debug enabled, send initial diagnostic info
+            if (DEBUG_MODE) {
+                Serial.println("<DEBUG:Module information>");
+                Serial.println("<DEBUG:===================>");
+                
+                // Report sensor distances
+                char buffer[100];
+                sprintf(buffer, "Distances: FL=%.1f F=%.1f FR=%.1f BL=%.1f B=%.1f BR=%.1f", 
+                        distFL, distF, distFR, distBL, distB, distBR);
+                debugPrint(buffer);
+                
+                // Report emergency status
+                sprintf(buffer, "Emergency: F=%d B=%d L=%d R=%d", 
+                        frontEmergencyStop, backEmergencyStop, leftEmergencyStop, rightEmergencyStop);
+                debugPrint(buffer);
+                
+                // Report override status
+                debugPrint(masterOverrideActive ? "MASTER_OVERRIDE:ACTIVE" : "MASTER_OVERRIDE:INACTIVE");
+                
+                // Report wheel mode
+                debugPrint(useThreeWheels ? "MODE:THREE_WHEEL" : "MODE:TWO_WHEEL");
+                
+                // Report pin state for master override
+                sprintf(buffer, "OVERRIDE_PIN_STATE:%s", 
+                        (digitalRead(I2C_MASTER_OVERRIDE_PIN) == LOW) ? "LOW(ACTIVE)" : "HIGH(INACTIVE)");
+                debugPrint(buffer);
+            }
+        } else {
+            // No parameter, just report current status
+            Serial.print("<ACK:DEBUG_STATUS:");
+            Serial.print(DEBUG_MODE ? "ENABLED" : "DISABLED");
+            Serial.println(">");
         }
         return;
     }

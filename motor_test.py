@@ -344,6 +344,7 @@ class MotorTester:
         print("  C. Custom command")
         print("  ACC. Set acceleration (ON/OFF)")
         print("  M. Set wheel mode (2WHEEL/3WHEEL)")
+        print("  B. Toggle DEBUG mode")
         print("  Z. Quit")
 
         while True:
@@ -354,13 +355,14 @@ class MotorTester:
                     print("Sending FORWARD ('W') command...")
                     ser.write(b'W\r\n')
 
-                elif choice == 'A':
-                    print("Sending TURN_LEFT ('A') command...")
-                    ser.write(b'A\r\n')
 
                 elif choice == 'S':
                     print("Sending BACKWARD ('S') command...")
                     ser.write(b'S\r\n')
+                    
+                elif choice == 'A':
+                    print("Sending TURN_LEFT ('A') command...")
+                    ser.write(b'A\r\n')
                     
                 elif choice == 'D':
                     print("Sending TURN_RIGHT ('D') command...")
@@ -451,6 +453,16 @@ class MotorTester:
                     cmd = f"MODE:{wheel_mode}\r\n"
                     print(f"Setting wheel mode to: {wheel_mode}")
                     ser.write(cmd.encode())
+                
+                elif choice == 'B':
+                    debug_mode = input("Set debug mode (0=OFF/1=ON): ")
+                    if debug_mode not in ['0', '1']:
+                        print("Invalid debug mode! Using 0 (OFF).")
+                        debug_mode = '0'
+                    
+                    cmd = f"DEBUG:{debug_mode}\r\n"
+                    print(f"Setting debug mode to: {'ON' if debug_mode == '1' else 'OFF'}")
+                    ser.write(cmd.encode())
 
                 elif choice == 'Z':
                     print("Quitting...")
@@ -509,6 +521,8 @@ def parse_args():
                         help=f'Acceleration mode: on enables smooth start/stop, off uses instant speed changes (default: {DEFAULT_ACCEL.lower()})')
     parser.add_argument('--mode', '-m', choices=['2wheel', '3wheel'], default=DEFAULT_MODE.lower(),
                         help=f'Movement mode: 3wheel enables omnidirectional movement, 2wheel disables back wheel (default: {DEFAULT_MODE.lower()})')
+    parser.add_argument('--debug', '-x', action='store_true',
+                        help='Enable debug mode on the Arduino to see detailed output')
     return parser.parse_args()
 
 
@@ -529,6 +543,11 @@ def main():
     # For standard operation, we need to connect first
     if not tester.connect():
         return 1
+
+    # If debug mode is requested, enable it at the beginning
+    if args.debug and hasattr(tester, 'arduino'):
+        tester.arduino.set_debug_mode(True)
+        print("Debug mode enabled on Arduino")
 
     try:
         if args.test == 'all' or args.test is None:

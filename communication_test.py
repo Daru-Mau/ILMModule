@@ -234,6 +234,25 @@ class ArduinoCommunicator:
 
         return success
 
+    def set_debug_mode(self, enabled: bool) -> bool:
+        """
+        Enable or disable debug mode on the Arduino
+
+        Parameters:
+        - enabled: True to enable debug mode, False to disable
+
+        Returns:
+        - True if the command was sent successfully
+        """
+        debug_value = 1 if enabled else 0
+        command = f"DEBUG:{debug_value}\n"
+        success = self._send_command(command)
+
+        if success:
+            logger.info(f"Debug mode {'enabled' if enabled else 'disabled'}")
+
+        return success
+
 
 def main():
     """Demo usage of the ArduinoCommunicator class"""
