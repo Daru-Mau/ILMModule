@@ -15,7 +15,8 @@
 
 // Forward declarations of structs and enums
 struct Motor;
-enum Direction {
+enum Direction
+{
     FORWARD,
     BACKWARD,
     STOP
@@ -48,7 +49,7 @@ int MAX_SPEED = 100;
 int MIN_SPEED = 50;
 int MAX_ROTATION_SPEED = 65; // Maximum speed for rotation to prevent escalation
 
-boolean DEBUG_MODE = false;     // Keep this false by default, but allow runtime changes
+boolean DEBUG_MODE = false; // Keep this false by default, but allow runtime changes
 
 // Message framing characters for UART communication
 const char START_MARKER = '<';
@@ -56,8 +57,10 @@ const char END_MARKER = '>';
 const char ESCAPE_CHAR = '\\';
 
 // Helper function for debug messages
-void debugPrint(const char* message) {
-    if (DEBUG_MODE) {
+void debugPrint(const char *message)
+{
+    if (DEBUG_MODE)
+    {
         Serial.print("<DEBUG:");
         Serial.print(message);
         Serial.println(">");
@@ -65,14 +68,16 @@ void debugPrint(const char* message) {
 }
 
 // Helper function for formatted debug messages
-void debugPrintf(const char* format, ...) {
-    if (DEBUG_MODE) {
+void debugPrintf(const char *format, ...)
+{
+    if (DEBUG_MODE)
+    {
         char buffer[64];
         va_list args;
         va_start(args, format);
         vsnprintf(buffer, sizeof(buffer), format, args);
         va_end(args);
-        
+
         Serial.print("<DEBUG:");
         Serial.print(buffer);
         Serial.println(">");
@@ -213,7 +218,6 @@ float distFL, distF, distFR, distBL, distB, distBR;
 int movementMode = 0;        // 0=Normal, 1=Rotation
 bool useThreeWheels = false; // Flag to select between 2-wheel (false) and 3-wheel (true) configuration
 
-
 // Function to ensure all motor enable pins are set to HIGH
 void ensureMotorEnablePins()
 {
@@ -253,13 +257,12 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
     if (prevDir && *prevDir != dir && *prevDir != STOP)
     {
         motor.currentSpeed = 0;
-    }
-
-    // Update the previous direction
+    } // Update the previous direction
     if (prevDir)
         *prevDir = dir;
 
-    targetSpeed = constrain(targetSpeed, MIN_SPEED, MAX_SPEED);
+    // Don't constrain the targetSpeed again, as it's already been constrained in the movement function
+    // Just apply acceleration limiting for smooth movements
     if (targetSpeed > motor.currentSpeed)
     {
         motor.currentSpeed = min(targetSpeed, motor.currentSpeed + MAX_SPEED * ACCEL_RATE);
@@ -270,7 +273,9 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
     }
 
     int speed = (int)motor.currentSpeed;
-    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+    // Only apply minimum speed constraint to avoid stalling motors
+    if (speed > 0 && speed < MIN_SPEED)
+        speed = MIN_SPEED;
 
     switch (dir)
     {
@@ -414,7 +419,7 @@ void executeMovement(int direction, int desiredSpeed)
         if (DEBUG_MODE)
         {
             char blockMsg[40] = "MOVEMENT_BLOCKED:EMERGENCY_STOP_";
-            
+
             switch (direction)
             {
             case 1:
@@ -611,13 +616,19 @@ void updateDistances()
                 newB < CRITICAL_DISTANCE || newBL < CRITICAL_DISTANCE || newBR < CRITICAL_DISTANCE)
             {
                 String criticalSensors = "";
-                if (newFL < CRITICAL_DISTANCE) criticalSensors += "FL ";
-                if (newF < CRITICAL_DISTANCE) criticalSensors += "F ";
-                if (newFR < CRITICAL_DISTANCE) criticalSensors += "FR ";
-                if (newBL < CRITICAL_DISTANCE) criticalSensors += "BL ";
-                if (newB < CRITICAL_DISTANCE) criticalSensors += "B ";
-                if (newBR < CRITICAL_DISTANCE) criticalSensors += "BR";
-                
+                if (newFL < CRITICAL_DISTANCE)
+                    criticalSensors += "FL ";
+                if (newF < CRITICAL_DISTANCE)
+                    criticalSensors += "F ";
+                if (newFR < CRITICAL_DISTANCE)
+                    criticalSensors += "FR ";
+                if (newBL < CRITICAL_DISTANCE)
+                    criticalSensors += "BL ";
+                if (newB < CRITICAL_DISTANCE)
+                    criticalSensors += "B ";
+                if (newBR < CRITICAL_DISTANCE)
+                    criticalSensors += "BR";
+
                 char buffer[100];
                 sprintf(buffer, "CRITICAL_DISTANCE:%s", criticalSensors.c_str());
                 debugPrint(buffer);
@@ -759,24 +770,31 @@ void requestEvent()
 }
 
 // Function to check if override pin is active (alternative to I2C communication)
-void checkOverridePin() {
+void checkOverridePin()
+{
     // When using INPUT_PULLUP, HIGH is the default (not pressed) state
     // and LOW means the pin is actively pulled to ground (override active)
     bool overrideActive = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == LOW);
-    
+
     // Detect changes in override state
-    if (overrideActive != masterOverrideActive) {
-        if (overrideActive) {
+    if (overrideActive != masterOverrideActive)
+    {
+        if (overrideActive)
+        {
             // Pin went LOW - activate override
             masterOverrideActive = true;
             stopAllMotors();
-            if (DEBUG_MODE) {
+            if (DEBUG_MODE)
+            {
                 debugPrint("PIN:OVERRIDE_ACTIVE");
             }
-        } else {
-            // Pin went HIGH - release override 
+        }
+        else
+        {
+            // Pin went HIGH - release override
             masterOverrideActive = false;
-            if (DEBUG_MODE) {
+            if (DEBUG_MODE)
+            {
                 debugPrint("PIN:OVERRIDE_RELEASED");
             }
         }
@@ -826,15 +844,19 @@ void setup()
     pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT_PULLUP); // Using internal pullup resistor
     prevMasterOverrideState = false;                // Force this to false
     masterOverrideActive = false;                   // Force override to be inactive
-    
+
     // Force initial check to ensure correct state
     bool initialOverrideState = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == LOW);
-    if (initialOverrideState) {
+    if (initialOverrideState)
+    {
         masterOverrideActive = true;
-        if (DEBUG_MODE) {
+        if (DEBUG_MODE)
+        {
             Serial.println("<WARNING:OVERRIDE_PIN_INITIALLY_ACTIVE>");
         }
-    } else {
+    }
+    else
+    {
         masterOverrideActive = false;
     }
 
@@ -996,19 +1018,29 @@ void turnLeft(int speed)
     if (DEBUG_MODE)
         debugPrint("Arc Turning LEFT");
 
-    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+    speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
+
+    // Calculate actual speeds with more extreme differentiation
+    int leftSpeed = max(MIN_SPEED, speed * 0.5);  // Reduced further from 0.3 to 0.2
+    int rightSpeed = min(MAX_SPEED, speed * 1.5); // Increased from 1.5 to 1.8
+
+    if (DEBUG_MODE)
+    {
+        char buffer[60];
+        sprintf(buffer, "TURN_LEFT: Left=%d, Right=%d", leftSpeed, rightSpeed);
+        debugPrint(buffer);
+    }
 
     if (useThreeWheels)
     {
-
-        moveMotor(motorLeft, BACKWARD, speed * 0.3);
-        moveMotor(motorRight, FORWARD, speed * 1.50);
+        moveMotor(motorLeft, BACKWARD, leftSpeed);
+        moveMotor(motorRight, FORWARD, rightSpeed);
         moveMotor(motorBack, FORWARD, speed * 0.75);
     }
     else
     {
-        moveMotor(motorLeft, BACKWARD, speed * 0.3);
-        moveMotor(motorRight, FORWARD, speed * 1.50);
+        moveMotor(motorLeft, BACKWARD, leftSpeed);
+        moveMotor(motorRight, FORWARD, rightSpeed);
         moveMotor(motorBack, STOP, 0);
     }
 }
@@ -1019,17 +1051,30 @@ void turnRight(int speed)
     if (DEBUG_MODE)
         debugPrint("Arc Turning RIGHT");
 
-    speed = constrain(speed, MIN_SPEED, MAX_SPEED);
+    // Use MAX_SPEED for consistency with turnLeft
+    speed = constrain(speed, MIN_SPEED, MAX_ROTATION_SPEED);
 
-    moveMotor(motorLeft, BACKWARD, speed*0.7);
-    moveMotor(motorRight, BACKWARD, 0);
+    // Calculate actual speeds with more extreme differentiation
+    int leftSpeed = min(MAX_SPEED, speed * 1.5);  // Left wheel faster
+    int rightSpeed = max(MIN_SPEED, speed * 0.5); // Right wheel slower
+
+    if (DEBUG_MODE)
+    {
+        char buffer[60];
+        sprintf(buffer, "TURN_RIGHT: Left=%d, Right=%d", leftSpeed, rightSpeed);
+        debugPrint(buffer);
+    }
 
     if (useThreeWheels)
     {
+        moveMotor(motorLeft, BACKWARD, leftSpeed);
+        moveMotor(motorRight, FORWARD, rightSpeed);
         moveMotor(motorBack, FORWARD, speed * 0.75);
     }
     else
     {
+        moveMotor(motorLeft, BACKWARD, leftSpeed);
+        moveMotor(motorRight, FORWARD, rightSpeed);
         moveMotor(motorBack, STOP, 0);
     }
 }
@@ -1295,7 +1340,7 @@ void loop()
         if (emergencyStop && !prevEmergencyStop && DEBUG_MODE)
         {
             char buffer[100];
-            sprintf(buffer, "Distances: FL=%.1f F=%.1f FR=%.1f BL=%.1f B=%.1f BR=%.1f", 
+            sprintf(buffer, "Distances: FL=%.1f F=%.1f FR=%.1f BL=%.1f B=%.1f BR=%.1f",
                     distFL, distF, distFR, distBL, distB, distBR);
             debugPrint(buffer);
         }
@@ -1319,22 +1364,25 @@ void processSerialInput()
     static boolean messageStarted = false;
     static boolean escapeNext = false;
     static unsigned long bufferStartTime = 0;
-    
+
     // Reset buffer if we've been waiting too long for a complete message
-    if (index > 0 && millis() - bufferStartTime > 1000) {
+    if (index > 0 && millis() - bufferStartTime > 1000)
+    {
         index = 0;
         messageStarted = false;
         escapeNext = false;
-        if (DEBUG_MODE) {
+        if (DEBUG_MODE)
+        {
             debugPrint("BUFFER_TIMEOUT_RESET");
         }
     }
-    
+
     // Start timer when we begin filling the buffer
-    if (index == 0) {
+    if (index == 0)
+    {
         bufferStartTime = millis();
     }
-    
+
     while (Serial.available())
     {
         char c = Serial.read();
@@ -1590,8 +1638,8 @@ void parseCommand(const char *cmd)
         // Update the overall emergency flag
         emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
         return;
-    } 
-    
+    }
+
     // Handle MOV command
     if (strcmp(command, "MOV") == 0)
     {
@@ -1658,8 +1706,8 @@ void parseCommand(const char *cmd)
             Serial.println("<ERR:Invalid ROT params>");
         }
         return;
-    } 
-    
+    }
+
     // Handle SPEED command
     if (strcmp(command, "SPEED") == 0)
     {
@@ -1684,8 +1732,8 @@ void parseCommand(const char *cmd)
             Serial.println("<ERR:Invalid SPEED params>");
         }
         return;
-    } 
-    
+    }
+
     // Handle SENS command
     if (strcmp(command, "SENS") == 0)
     {
@@ -1734,44 +1782,49 @@ void parseCommand(const char *cmd)
     }
 
     // Handle DEBUG command
-    if (strcmp(command, "DEBUG") == 0) {
+    if (strcmp(command, "DEBUG") == 0)
+    {
         // Parse debug parameter: 0 = off, 1 = on
         int mode = 0;
-        
-        if (sscanf(params, "%d", &mode) == 1) {
+
+        if (sscanf(params, "%d", &mode) == 1)
+        {
             DEBUG_MODE = (mode == 1);
             Serial.print("<ACK:DEBUG:");
             Serial.print(DEBUG_MODE ? "ENABLED" : "DISABLED");
             Serial.println(">");
-            
+
             // If debug enabled, send initial diagnostic info
-            if (DEBUG_MODE) {
+            if (DEBUG_MODE)
+            {
                 Serial.println("<DEBUG:Module information>");
                 Serial.println("<DEBUG:===================>");
-                
+
                 // Report sensor distances
                 char buffer[100];
-                sprintf(buffer, "Distances: FL=%.1f F=%.1f FR=%.1f BL=%.1f B=%.1f BR=%.1f", 
+                sprintf(buffer, "Distances: FL=%.1f F=%.1f FR=%.1f BL=%.1f B=%.1f BR=%.1f",
                         distFL, distF, distFR, distBL, distB, distBR);
                 debugPrint(buffer);
-                
+
                 // Report emergency status
-                sprintf(buffer, "Emergency: F=%d B=%d L=%d R=%d", 
+                sprintf(buffer, "Emergency: F=%d B=%d L=%d R=%d",
                         frontEmergencyStop, backEmergencyStop, leftEmergencyStop, rightEmergencyStop);
                 debugPrint(buffer);
-                
+
                 // Report override status
                 debugPrint(masterOverrideActive ? "MASTER_OVERRIDE:ACTIVE" : "MASTER_OVERRIDE:INACTIVE");
-                
+
                 // Report wheel mode
                 debugPrint(useThreeWheels ? "MODE:THREE_WHEEL" : "MODE:TWO_WHEEL");
-                
+
                 // Report pin state for master override
-                sprintf(buffer, "OVERRIDE_PIN_STATE:%s", 
+                sprintf(buffer, "OVERRIDE_PIN_STATE:%s",
                         (digitalRead(I2C_MASTER_OVERRIDE_PIN) == LOW) ? "LOW(ACTIVE)" : "HIGH(INACTIVE)");
                 debugPrint(buffer);
             }
-        } else {
+        }
+        else
+        {
             // No parameter, just report current status
             Serial.print("<ACK:DEBUG_STATUS:");
             Serial.print(DEBUG_MODE ? "ENABLED" : "DISABLED");

@@ -108,7 +108,6 @@ class AprilTagUARTController:
                  charging_time: str = DEFAULT_CHARGING_TIME,
                  work_time: str = DEFAULT_WORK_TIME,
                  use_three_wheels: bool = False):
-        
         """Initialize the controller with communication parameters"""
         self.port = port
         self.baud_rate = baud_rate
@@ -135,7 +134,7 @@ class AprilTagUARTController:
 
     def calculate_desired_speed(self, distance_cm: float, base_speed: int) -> int:
         """Calculate desired speed based on distance to target
-        
+
         This calculates the speed the robot should try to move at to reach the target.
         The Arduino will apply additional safety scaling if obstacles are detected.
         """
@@ -148,7 +147,7 @@ class AprilTagUARTController:
 
         # Calculate speed as percentage of range between min and max
         desired_speed = int(self.min_speed + (self.max_speed -
-                    self.min_speed) * speed_factor)
+                                              self.min_speed) * speed_factor)
 
         # Ensure speed doesn't exceed the max or go below the min
         return max(self.min_speed, min(self.max_speed, desired_speed))
@@ -341,20 +340,20 @@ class AprilTagUARTController:
             speed = 0
         else:
             if center_x < frame_center - tolerance:
-                direction = DIR_ROTATE_LEFT
+                direction = DIR_TURN_LEFT
                 # Calculate proportional speed based on how far off-center
                 offset_ratio = min(
                     1.0, abs(center_x - frame_center) / (frame_width/4))
                 turn_factor = 0.25 + (0.25 * offset_ratio)  # 25-50% of speed
                 speed = max(self.min_speed, int(speed * turn_factor))
             elif center_x > frame_center + tolerance:
-                direction = DIR_ROTATE_RIGHT
+                direction = DIR_TURN_RIGHT
                 # Reduce speed for turning - LOWER VALUE
 
                 # Reduced from 0.7 to 0.4
                 speed = max(self.min_speed, int(speed * 0.4))
             else:
-                direction = DIR_FORWARD 
+                direction = DIR_FORWARD
 
         if self.verbose:
             logger.debug(
@@ -385,14 +384,14 @@ class AprilTagUARTController:
                 target_detection = matching_tags[0]
                 direction, speed = self.get_direction_and_speed(
                     target_detection, frame.shape[1])
-                
+
                 # Calculate actual distance to tag for obstacle avoidance
                 tag_size_px = self.estimate_tag_size(target_detection.corners)
                 distance_cm = self.calculate_distance(tag_size_px)
-                
+
                 tag_data = TagData(
                     tag_id=target_detection.tag_id,
-                    speed=speed, 
+                    speed=speed,
                     direction=direction,
                     distance=distance_cm  # Include actual physical distance
                 )
@@ -414,14 +413,14 @@ class AprilTagUARTController:
             detections, key=lambda d: self.estimate_tag_size(d.corners))
         direction, speed = self.get_direction_and_speed(
             best_detection, frame.shape[1])
-        
+
         # Calculate actual distance to tag for obstacle avoidance
         tag_size_px = self.estimate_tag_size(best_detection.corners)
         distance_cm = self.calculate_distance(tag_size_px)
-        
+
         tag_data = TagData(
             tag_id=best_detection.tag_id,
-            speed=speed, 
+            speed=speed,
             direction=direction,
             distance=distance_cm  # Include actual physical distance
         )
@@ -692,7 +691,8 @@ class AprilTagUARTController:
         if self.search_pattern_index < 4:
             # Move in a square pattern with reversed forward/backward
             # Changed FORWARD to BACKWARD and BACKWARD to FORWARD
-            directions = [DIR_BACKWARD, DIR_TURN_LEFT, DIR_FORWARD, DIR_TURN_RIGHT]
+            directions = [DIR_BACKWARD, DIR_TURN_LEFT,
+                          DIR_FORWARD, DIR_TURN_RIGHT]
             direction = directions[self.search_pattern_index]
 
             # Use the correct method to send movement commands with reduced speed
@@ -700,7 +700,8 @@ class AprilTagUARTController:
                 tag_id=self.current_target_tag_id,
                 speed=int(self.min_speed * 0.7),  # Use 70% of minimum speed
                 direction=direction,
-                distance=100.0  # Default search distance (far enough to not cause issues)
+                # Default search distance (far enough to not cause issues)
+                distance=100.0
             )
             self.communicator.send_tag_data(tag_data)
 
@@ -733,7 +734,7 @@ def main():
                         help=f'Serial port (default: auto-detect)')
     parser.add_argument('--baud', type=int, default=DEFAULT_BAUD_RATE,
                         help=f'Baud rate (default: {DEFAULT_BAUD_RATE})')
-    
+
     parser.add_argument('--max-speed', type=int, default=DEFAULT_MAX_SPEED,
                         help=f'Maximum motor speed (50-255) (default: {DEFAULT_MAX_SPEED})')
     parser.add_argument('--min-speed', type=int, default=DEFAULT_MIN_SPEED,
