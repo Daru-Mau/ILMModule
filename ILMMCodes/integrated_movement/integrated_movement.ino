@@ -14,10 +14,22 @@
 #include <math.h>
 
 // === I2C Configuration ===
-#define I2C_SLAVE_ADDRESS 0x08        // Slave address for this Arduino
+// Addresses for I2C communication
+#define MY_ADDR 0b100     // Localization module's 3-bit address (4 in decimal)
+#define MASTER_ADDR 0b001 // Master's 3-bit address (1 in decimal)
+
+// Commands from Full_Master.ino
+#define ASK_READY_CMD 0b00011  // Master asks if slaves are ready
+#define TELL_READY_CMD 0b11100 // Slaves tell master they are ready
+#define GO_IDLE_CMD 0b10111    // Master tells slaves to go into idle mode
+#define GO_ACTIVE_CMD 0b11000  // Master tells slaves to go into active mode
+
+// Legacy I2C configuration
+#define I2C_SLAVE_ADDRESS 0x04        // Slave address for this Arduino (same as MY_ADDR but in hex)
 #define I2C_MASTER_OVERRIDE_PIN 12    // Digital pin that master can use to override
 bool masterOverrideActive = false;    // Flag to indicate if master override is active
 bool prevMasterOverrideState = false; // To detect changes in override state
+bool moduleReady = false;             // Flag to indicate if module is ready
 
 // === Performance Settings ===
 #define SERIAL_BAUD_RATE 115200
@@ -627,25 +639,52 @@ void receiveEvent(int howMany)
 {
     if (Wire.available())
     {
-        char command = Wire.read();
+        uint8_t message = Wire.read();
 
-        // Process command from master
-        switch (command)
+        // Extract destination address (top 3 bits) and command (lower 5 bits)
+        uint8_t dest = message >> 5;
+        uint8_t cmd = message & 0b00011111;
+
+        // Only process messages addressed to this module
+        if (dest != MY_ADDR)
+            return;
+
+        // Handle commands from master
+        switch (cmd)
         {
-        case 'S': // Stop/Suspend operations
-            masterOverrideActive = true;
-            stopAllMotors(); // Immediately stop all motors
-            if (DEBUG_MODE)
+        case ASK_READY_CMD:
+            // Master is asking if we're ready
+            if (moduleReady)
             {
-                Serial.println("<I2C:OVERRIDE_ACTIVE>");
+                // Send ready response
+                uint8_t response = (MASTER_ADDR << 5) | TELL_READY_CMD;
+                Wire.beginTransmission(MASTER_ADDR);
+                Wire.write(response);
+                Wire.endTransmission();
+
+                if (DEBUG_MODE)
+                {
+                    Serial.println("<I2C:SENT_READY_STATUS>");
+                }
             }
             break;
 
-        case 'R': // Resume operations
+        case GO_IDLE_CMD:
+            // Master wants us to enter idle mode (stop all operations)
+            masterOverrideActive = true;
+            stopAllMotors();
+            if (DEBUG_MODE)
+            {
+                Serial.println("<LOCALIZATION_MODULE:ENTERED_IDLE_MODE>");
+            }
+            break;
+
+        case GO_ACTIVE_CMD:
+            // Master wants us to enter active mode (resume operations)
             masterOverrideActive = false;
             if (DEBUG_MODE)
             {
-                Serial.println("<I2C:OVERRIDE_RELEASED>");
+                Serial.println("<LOCALIZATION_MODULE:ENTERED_ACTIVE_MODE>");
             }
             break;
 
@@ -653,8 +692,8 @@ void receiveEvent(int howMany)
             // Unknown command
             if (DEBUG_MODE)
             {
-                Serial.print("<I2C:UNKNOWN_CMD:");
-                Serial.print(command);
+                Serial.print("<LOCALIZATION_MODULE:UNKNOWN_CMD:");
+                Serial.print(cmd);
                 Serial.println(">");
             }
             break;
@@ -668,7 +707,7 @@ void requestEvent()
     // Send current status to master when requested
     if (masterOverrideActive)
     {
-        Wire.write('S'); // Suspended
+        Wire.write('S'); // Suspended/Idle
     }
     else if (emergencyStop)
     {
@@ -677,6 +716,12 @@ void requestEvent()
     else
     {
         Wire.write('A'); // Active
+    }
+
+    // Add a debug log for the request event
+    if (DEBUG_MODE)
+    {
+        Serial.println("<LOCALIZATION_MODULE:REQUEST_EVENT_HANDLED>");
     }
 }
 
@@ -738,20 +783,18 @@ void setup()
     setupMotorPins(motorBack);
 
     // Make sure enable pins are set properly
-    ensureMotorEnablePins();
-
-    // Setup I2C as slave
+    ensureMotorEnablePins(); // Setup I2C as slave - Using address 0x04 for the localization module
     Wire.begin(I2C_SLAVE_ADDRESS);
     Wire.onReceive(receiveEvent);
     Wire.onRequest(requestEvent);
 
-    // ==== Setup override pin ====
-    /* pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT);
-    prevMasterOverrideState = (digitalRead(I2C_MASTER_OVERRIDE_PIN) == HIGH);
-    masterOverrideActive = prevMasterOverrideState;
-     */
+    // Log the module type to serial
+    Serial.println("<MODULE_TYPE:LOCALIZATION>");
+    Serial.print("<I2C_ADDRESS:0x");
+    Serial.print(I2C_SLAVE_ADDRESS, HEX);
+    Serial.println(">");
 
-    // === TEMPORAL MEASURE TO DEACTIVATE MASTER OVERRIDE ===
+    // ==== Setup override pin ====
     pinMode(I2C_MASTER_OVERRIDE_PIN, INPUT_PULLUP); // Using internal pullup resistor
     prevMasterOverrideState = false;                // Force this to false
     masterOverrideActive = false;                   // Force override to be inactive
@@ -779,6 +822,22 @@ void setup()
         pinMode(trigPins[i], OUTPUT);
         pinMode(echoPins[i], INPUT);
         digitalWrite(trigPins[i], LOW); // Ensure clean start
+    } // Mark module as ready after all initialization is complete
+    moduleReady = true;
+
+    // Log that the localization module is ready
+    Serial.println("<LOCALIZATION_MODULE:INITIALIZATION_COMPLETE>");
+    Serial.println("<LOCALIZATION_MODULE:READY_FOR_I2C_COMMUNICATION>");
+
+    // Send ready status to master if it's already asking
+    uint8_t response = (MASTER_ADDR << 5) | TELL_READY_CMD;
+    Wire.beginTransmission(MASTER_ADDR);
+    Wire.write(response);
+    Wire.endTransmission();
+
+    if (DEBUG_MODE)
+    {
+        Serial.println("<I2C:MARKED_READY>");
     }
 }
 
@@ -1067,10 +1126,10 @@ void moveDiagonalBackwardRight(int speed)
 }
 void loop()
 {
-    // ==== Check if master override is active (via pin) ====
+    // ==== Check if master override is active (via pin or I2C) ====
     checkOverridePin();
 
-    // If master override is active, only process I2C but not serial or motor commands
+    // If master override is active, ONLY handle I2C commands, stop all other functionality
     if (masterOverrideActive)
     {
         // Only report status periodically if in debug mode
@@ -1078,10 +1137,33 @@ void loop()
         static unsigned long lastOverrideStatus = 0;
         if (DEBUG_MODE && (now - lastOverrideStatus > 5000))
         {
-            Serial.println("<MASTER_OVERRIDE_ACTIVE>");
+            Serial.println("<LOCALIZATION_MODULE:IDLE_MODE>");
             lastOverrideStatus = now;
         }
-        return; // Skip the rest of the loop function
+
+        // When in master override mode, ensure all motors are stopped
+        stopAllMotors();
+
+        // Skip all sensor readings, serial commands, and other operations
+        return;
+    } // Periodically send ready status to master if needed
+    static unsigned long lastReadyCheck = 0;
+    unsigned long currentTime = millis();
+    if (moduleReady && (currentTime - lastReadyCheck > 5000)) // Check every 5 seconds
+    {
+        lastReadyCheck = currentTime;
+
+        // The master should request this through I2C, but we can also proactively send it
+        if (DEBUG_MODE)
+        {
+            Serial.println("<LOCALIZATION_MODULE:READY>");
+        }
+
+        // Can optionally send a ready status via I2C here if needed
+        // uint8_t response = (MASTER_ADDR << 5) | TELL_READY_CMD;
+        // Wire.beginTransmission(MASTER_ADDR);
+        // Wire.write(response);
+        // Wire.endTransmission();
     }
 
     // Process serial commands
