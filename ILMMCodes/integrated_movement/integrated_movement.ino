@@ -998,15 +998,17 @@ void turnLeft(int speed)
 
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
-    moveMotor(motorLeft, BACKWARD, 0);
-    moveMotor(motorRight, FORWARD, speed * 0.70);
-
     if (useThreeWheels)
     {
+
+        moveMotor(motorLeft, BACKWARD, speed * 0.3);
+        moveMotor(motorRight, FORWARD, speed * 1.50);
         moveMotor(motorBack, FORWARD, speed * 0.75);
     }
     else
     {
+        moveMotor(motorLeft, BACKWARD, speed * 0.3);
+        moveMotor(motorRight, FORWARD, speed * 1.50);
         moveMotor(motorBack, STOP, 0);
     }
 }
@@ -1020,7 +1022,7 @@ void turnRight(int speed)
     speed = constrain(speed, MIN_SPEED, MAX_SPEED);
 
     moveMotor(motorLeft, BACKWARD, speed*0.7);
-    moveMotor(motorRight, FORWARD, 0);
+    moveMotor(motorRight, BACKWARD, 0);
 
     if (useThreeWheels)
     {
