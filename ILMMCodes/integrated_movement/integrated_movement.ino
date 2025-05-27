@@ -197,6 +197,13 @@ const float SLOW_DOWN_DISTANCE = 30.0; // Start slowing down distance (cm)
 const float SAFE_DISTANCE = 60.0;      // Safe operating distance (cm)
 const int REACTION_DELAY = 50;         // Milliseconds between updates
 
+// Advanced settings for obstacle avoidance
+const float MIN_AVOIDANCE_DISTANCE = 20.0;     // Minimum safe distance during avoidance (cm)
+const float OPTIMAL_AVOIDANCE_DISTANCE = 40.0; // Optimal distance from obstacles during avoidance
+const float ROTATION_ANGLE_SMALL = 45.0;       // Degrees to rotate for minor obstacles
+const float ROTATION_ANGLE_LARGE = 90.0;       // Degrees for major obstacles
+const int MAX_AVOIDANCE_ATTEMPTS = 3;          // Maximum attempts before giving up
+
 // Ring buffer for commands
 char cmdBuffer[COMMAND_BUFFER_SIZE];
 uint8_t bufferHead = 0;
@@ -224,6 +231,16 @@ void setupMotorPins(Motor &motor)
     digitalWrite(motor.LEN, HIGH);
 }
 
+// State machine for the obstacle avoidance procedure
+enum AvoidanceState
+{
+    IDLE,             // No obstacle avoidance in progress
+    ROTATING_AWAY,    // Rotating away from obstacle (left or right)
+    MOVING_PAST,      // Moving past the obstacle
+    ROTATING_BACK,    // Rotating back to original direction
+    RETURNING_TO_PATH // Moving forward to return to original path
+};
+
 // === Globals ===
 bool emergencyStop = false;
 bool frontEmergencyStop = false; // Blocks forward movement
@@ -233,6 +250,19 @@ bool rightEmergencyStop = false; // Blocks right movement
 float distFL, distF, distFR, distBL, distB, distBR;
 int movementMode = 0;        // 0=Normal, 1=Rotation
 bool useThreeWheels = false; // Flag to select between 2-wheel (false) and 3-wheel (true) configuration
+
+// Obstacle avoidance state variables
+bool enableObstacleAvoidance = false;        // Flag to enable adaptive obstacle avoidance
+AvoidanceState avoidanceState = IDLE;        // Current state of obstacle avoidance
+unsigned long avoidanceTimer = 0;            // Timer for obstacle avoidance steps
+bool avoidanceLeftDirection = true;          // Direction chosen for avoidance (true = left, false = right)
+int originalSpeed = 0;                       // Original speed before avoidance started
+float avoidanceRotationAngle = 90.0;         // Angle to rotate (can be dynamically adjusted)
+int avoidanceAttempts = 0;                   // Number of attempts in current avoidance sequence
+bool avoidanceSuccessful = false;            // Was the last avoidance successful?
+const unsigned long ROTATION_TIMEOUT = 2000; // Time allowed for rotation (ms)
+const unsigned long MOVEMENT_TIMEOUT = 1500; // Time allowed for movement (ms)
+const float AVOIDANCE_DISTANCE = 30.0;       // Distance to move to avoid obstacle (cm)
 
 // === NeoPixel LEDS Setup ===
 
@@ -675,16 +705,14 @@ void updateDistances()
             }
             lastCriticalCheck = now;
         }
-    }
-
-    // Apply simple filtering - if new reading is drastically different,
+    } // Apply simple filtering - if new reading is drastically different,
     // verify with additional reading before accepting
-    distFL = filterReading(prevFL, newFL);
-    distF = filterReading(prevF, newF);
-    distFR = filterReading(prevFR, newFR);
-    distBL = filterReading(prevBL, newBL);
-    distB = filterReading(prevB, newB);
-    distBR = filterReading(prevBR, newBR);
+    distFL = filterReading(prevFL, newFL, TRIG_FL, ECHO_FL);
+    distF = filterReading(prevF, newF, TRIG_F, ECHO_F);
+    distFR = filterReading(prevFR, newFR, TRIG_FR, ECHO_FR);
+    distBL = filterReading(prevBL, newBL, TRIG_BL, ECHO_BL);
+    distB = filterReading(prevB, newB, TRIG_B, ECHO_B);
+    distBR = filterReading(prevBR, newBR, TRIG_BR, ECHO_BR);
 
     // Update previous values for next iteration
     prevFL = distFL;
@@ -696,14 +724,25 @@ void updateDistances()
 }
 
 // Helper function to filter unreliable readings
-float filterReading(float prevValue, float newValue)
+float filterReading(float prevValue, float newValue, int trigPin = -1, int echoPin = -1)
 {
     // If reading jumps by more than 50% and is less than the safe distance,
     // be conservative and use the smaller value
     if (abs(newValue - prevValue) > (prevValue * 0.5) && newValue < SAFE_DISTANCE)
     {
-        // Verify with an additional reading
-        float verifyValue = readUltrasonicDistance(TRIG_FL, ECHO_FL);
+        // Verify with an additional reading using the correct sensor pins if provided
+        // Otherwise default to using previous pins as a fallback
+        float verifyValue;
+        if (trigPin != -1 && echoPin != -1)
+        {
+            verifyValue = readUltrasonicDistance(trigPin, echoPin);
+        }
+        else
+        {
+            // Fall back to original behavior as a safety measure
+            verifyValue = readUltrasonicDistance(TRIG_FL, ECHO_FL);
+        }
+
         if (abs(verifyValue - newValue) < abs(verifyValue - prevValue))
         {
             return newValue; // New reading confirmed
@@ -1035,6 +1074,59 @@ void testMotors()
 // Function to implement forward movement with 2/3 wheel mode support
 void moveForward(int speed)
 {
+    // Safety check - don't move forward if there's an obstacle ahead
+    if (frontEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("FORWARD_BLOCKED:EMERGENCY_STOP_ACTIVE");
+
+        // Check if adaptive obstacle avoidance is enabled
+        if (enableObstacleAvoidance)
+        {
+            // Attempt to navigate around the obstacle
+            if (navigateAroundObstacle(speed))
+            {
+                // Navigation completed successfully or failed after multiple attempts
+                if (avoidanceSuccessful && DEBUG_MODE)
+                {
+                    debugPrint("AVOIDANCE_SUCCESSFUL:PATH_CLEARED");
+                }
+                return;
+            }
+            else
+            {
+                // Still in the process of avoiding - continue with avoidance procedure
+                return;
+            }
+        }
+        return; // No avoidance, just block movement
+    }
+
+    // If we're in the middle of an obstacle avoidance procedure, continue it
+    if (avoidanceState != IDLE && enableObstacleAvoidance)
+    {
+        bool result = continueObstacleAvoidance();
+        // Reset avoidance after completion for safety
+        if (result)
+        {
+            // Report success only if avoidance was actually successful
+            if (avoidanceSuccessful && DEBUG_MODE)
+            {
+                debugPrint("AVOIDANCE_COMPLETED:RETURNING_TO_NORMAL_MOVEMENT");
+            }
+            else if (!avoidanceSuccessful && DEBUG_MODE)
+            {
+                debugPrint("AVOIDANCE_ABANDONED:COULD_NOT_FIND_PATH");
+            }
+
+            // If we've completed the obstacle avoidance process (success or not),
+            // reset state to prepare for the next obstacle
+            avoidanceAttempts = 0;
+            avoidanceState = IDLE;
+        }
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Moving FORWARD");
 
@@ -1057,6 +1149,14 @@ void moveForward(int speed)
 // Function to implement backward movement with 2/3 wheel mode support
 void moveBackward(int speed)
 {
+    // Safety check - don't move backward if there's an obstacle behind
+    if (backEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("BACKWARD_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Moving BACKWARD");
 
@@ -1079,6 +1179,14 @@ void moveBackward(int speed)
 // Turn left (arc left)
 void turnLeft(int speed)
 {
+    // Safety check - don't turn left if there's an obstacle to the left
+    if (leftEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("LEFT_TURN_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Arc Turning LEFT");
 
@@ -1112,6 +1220,14 @@ void turnLeft(int speed)
 // Turn right (arc right)
 void turnRight(int speed)
 {
+    // Safety check - don't turn right if there's an obstacle to the right
+    if (rightEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("RIGHT_TURN_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Arc Turning RIGHT");
 
@@ -1146,6 +1262,14 @@ void turnRight(int speed)
 // Slide left (strafe) - Updated with integrated movement logic
 void slideLeft(int speed)
 {
+    // Safety check - don't slide left if there's an obstacle to the left
+    if (leftEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("SLIDE_LEFT_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Sliding LEFT");
 
@@ -1160,14 +1284,31 @@ void slideLeft(int speed)
     }
     else
     {
-        // In 2-wheel mode, fall back to rotation
-        rotateLeft(speed);
+        // In 2-wheel mode, fall back to rotation, but check if rotation is safe first
+        if (!leftEmergencyStop && !rightEmergencyStop)
+        {
+            rotateLeft(speed);
+        }
+        else
+        {
+            if (DEBUG_MODE)
+                debugPrint("SLIDE_LEFT_BLOCKED:CANNOT_ROTATE_SAFELY");
+            return;
+        }
     }
 }
 
 // Slide right (strafe) - Updated with integrated movement logic
 void slideRight(int speed)
 {
+    // Safety check - don't slide right if there's an obstacle to the right
+    if (rightEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("SLIDE_RIGHT_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Sliding RIGHT");
 
@@ -1182,14 +1323,31 @@ void slideRight(int speed)
     }
     else
     {
-        // In 2-wheel mode, fall back to rotation
-        rotateRight(speed);
+        // In 2-wheel mode, fall back to rotation, but check if rotation is safe first
+        if (!leftEmergencyStop && !rightEmergencyStop)
+        {
+            rotateRight(speed);
+        }
+        else
+        {
+            if (DEBUG_MODE)
+                debugPrint("SLIDE_RIGHT_BLOCKED:CANNOT_ROTATE_SAFELY");
+            return;
+        }
     }
 }
 
 // Forward Left Diagonal movement
 void moveDiagonalForwardLeft(int speed)
 {
+    // Safety check - don't move forward-left with obstacles ahead or to the left
+    if (frontEmergencyStop || leftEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("DIAG_FORWARD_LEFT_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Moving Diagonal Forward-Left");
 
@@ -1207,13 +1365,21 @@ void moveDiagonalForwardLeft(int speed)
     }
     else
     {
-        moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
+        moveMotor(motorBack, STOP, 0);
     }
 }
 
 // Forward Right Diagonal movement
 void moveDiagonalForwardRight(int speed)
 {
+    // Safety check - don't move forward-right with obstacles ahead or to the right
+    if (frontEmergencyStop || rightEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("DIAG_FORWARD_RIGHT_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Moving Diagonal Forward-Right");
 
@@ -1236,6 +1402,14 @@ void moveDiagonalForwardRight(int speed)
 // Backward Left Diagonal movement
 void moveDiagonalBackwardLeft(int speed)
 {
+    // Safety check - don't move backward-left with obstacles behind or to the left
+    if (backEmergencyStop || leftEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("DIAG_BACKWARD_LEFT_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Moving Diagonal Backward-Left");
 
@@ -1258,6 +1432,14 @@ void moveDiagonalBackwardLeft(int speed)
 // Backward Right Diagonal movement
 void moveDiagonalBackwardRight(int speed)
 {
+    // Safety check - don't move backward-right with obstacles behind or to the right
+    if (backEmergencyStop || rightEmergencyStop)
+    {
+        if (DEBUG_MODE)
+            debugPrint("DIAG_BACKWARD_RIGHT_BLOCKED:EMERGENCY_STOP_ACTIVE");
+        return;
+    }
+
     if (DEBUG_MODE)
         debugPrint("Moving Diagonal Backward-Right");
 
@@ -1335,11 +1517,26 @@ void loop()
     {
         lastControlLoop = now;
 
-        // Check emergency stop conditions directionally
-        bool frontDanger = (distF < CRITICAL_DISTANCE || distFL < CRITICAL_DISTANCE || distFR < CRITICAL_DISTANCE);
-        bool backDanger = (distB < CRITICAL_DISTANCE || distBL < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
-        bool leftDanger = (distFL < CRITICAL_DISTANCE || distBL < CRITICAL_DISTANCE);
-        bool rightDanger = (distFR < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
+        // Check emergency stop conditions directionally with improved consensus
+        // For front and back, require at least 2 sensors to agree OR the center sensor to be triggered
+        // This reduces false positives from occasional noise in single sensor readings        bool frontMainSensor = (distF < CRITICAL_DISTANCE);
+        bool frontSideSensors = ((distFL < CRITICAL_DISTANCE && distFR < CRITICAL_DISTANCE) ||
+                                 (distFL < CRITICAL_DISTANCE * 0.7) || // Extra sensitive to very close objects
+                                 (distFR < CRITICAL_DISTANCE * 0.7));  // on either side
+        bool frontDanger = frontMainSensor || frontSideSensors;
+
+        bool backMainSensor = (distB < CRITICAL_DISTANCE);
+        bool backSideSensors = ((distBL < CRITICAL_DISTANCE && distBR < CRITICAL_DISTANCE) ||
+                                (distBL < CRITICAL_DISTANCE * 0.7) ||
+                                (distBR < CRITICAL_DISTANCE * 0.7));
+        bool backDanger = backMainSensor || backSideSensors;
+
+        // Side emergency stops are triggered if at least one sensor is very close (70% of critical)
+        // or both sensors are near critical distance
+        bool leftDanger = ((distFL < CRITICAL_DISTANCE * 0.8) || (distBL < CRITICAL_DISTANCE * 0.8) ||
+                           (distFL < CRITICAL_DISTANCE && distBL < CRITICAL_DISTANCE));
+        bool rightDanger = ((distFR < CRITICAL_DISTANCE * 0.8) || (distBR < CRITICAL_DISTANCE * 0.8) ||
+                            (distFR < CRITICAL_DISTANCE && distBR < CRITICAL_DISTANCE));
 
         // Update directional emergency flags
         if (frontDanger != frontEmergencyStop)
@@ -1354,13 +1551,27 @@ void loop()
                 debugPrint("EMERGENCY_RELEASED:FRONT");
             }
         }
-
         if (backDanger != backEmergencyStop)
         {
             backEmergencyStop = backDanger;
-            if (backEmergencyStop && DEBUG_MODE)
+            if (backEmergencyStop)
             {
-                debugPrint("EMERGENCY_STOP:BACK");
+                // Stop backward movement immediately when obstacles detected behind
+                // Check if motors are currently moving backward (left FORWARD, right BACKWARD)
+                if (motorLeft.currentSpeed > 0 && motorRight.currentSpeed > 0)
+                {
+                    // Left is FORWARD and right is BACKWARD means robot is moving backward
+                    if (DEBUG_MODE)
+                    {
+                        debugPrint("EMERGENCY_STOP:BACK - Stopping motors immediately");
+                    }
+                    stopAllMotors();
+                }
+
+                if (DEBUG_MODE)
+                {
+                    debugPrint("EMERGENCY_STOP:BACK");
+                }
             }
             else if (!backEmergencyStop && DEBUG_MODE)
             {
@@ -1396,7 +1607,10 @@ void loop()
 
         // Set overall emergencyStop flag (for compatibility with existing code)
         bool prevEmergencyStop = emergencyStop;
-        emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
+        emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop; // Dynamically adjust obstacle avoidance parameters based on the environment
+        // Always check emergency status to update avoidance parameters, even if obstacle
+        // avoidance is not currently active - this ensures proper parameters when it's enabled
+        checkEmergencyStatus();
 
         // Don't stop all motors when an emergency stop is detected - instead let the
         // direction-specific emergency stops control movement in executeMovement().
@@ -1895,6 +2109,40 @@ void parseCommand(const char *cmd)
             Serial.println(">");
         }
         return;
+    } // Handle obstacle avoidance command
+    if (strcmp(command, "AVOIDANCE") == 0)
+    {
+        // Parse avoidance parameter: 0 = off, 1 = on
+        int mode = 0;
+
+        if (sscanf(params, "%d", &mode) == 1)
+        {
+            enableObstacleAvoidance = (mode == 1);
+
+            // Reset avoidance state when turning off
+            if (!enableObstacleAvoidance)
+            {
+                avoidanceState = IDLE;
+            }
+
+            Serial.print("<ACK:AVOIDANCE:");
+            Serial.print(enableObstacleAvoidance ? "ENABLED" : "DISABLED");
+            Serial.println(">");
+
+            // If debug enabled, send additional info
+            if (DEBUG_MODE)
+            {
+                debugPrint(enableObstacleAvoidance ? "Obstacle avoidance enabled - Robot will try to navigate around obstacles" : "Obstacle avoidance disabled - Robot will stop at obstacles");
+            }
+        }
+        else
+        {
+            // No parameter, just report current status
+            Serial.print("<ACK:AVOIDANCE_STATUS:");
+            Serial.print(enableObstacleAvoidance ? "ENABLED" : "DISABLED");
+            Serial.println(">");
+        }
+        return;
     }
 
     // Handle I2C status command
@@ -1907,8 +2155,7 @@ void parseCommand(const char *cmd)
         return;
     }
 
-    // Handle STATUS command to report current state
-    if (strcmp(command, "STATUS") == 0)
+    // Handle STATUS command to report current state    if (strcmp(command, "STATUS") == 0)
     {
         // Report robot status including emergency flags and sensor readings
         Serial.print("<ACK:STATUS:");
@@ -1919,11 +2166,49 @@ void parseCommand(const char *cmd)
             Serial.print(frontEmergencyStop ? "F" : "");
             Serial.print(backEmergencyStop ? "B" : "");
             Serial.print(leftEmergencyStop ? "L" : "");
-            Serial.print(rightEmergencyStop ? "R" : "");
+            Serial.print(rightEmergencyStop ? "R" : ""); // Report avoidance status if active during emergency
+            if (enableObstacleAvoidance && avoidanceState != IDLE)
+            {
+                Serial.print(":AVOIDING");
+                // Include more detailed state information when in debug mode
+                if (DEBUG_MODE)
+                {
+                    switch (avoidanceState)
+                    {
+                    case ROTATING_AWAY:
+                        Serial.print("_ROTATING");
+                        Serial.print(avoidanceLeftDirection ? "_LEFT" : "_RIGHT");
+                        break;
+                    case MOVING_PAST:
+                        Serial.print("_PASSING");
+                        break;
+                    case ROTATING_BACK:
+                        Serial.print("_RETURNING");
+                        break;
+                    case RETURNING_TO_PATH:
+                        Serial.print("_FINALIZING");
+                        break;
+                    }
+                    Serial.print("_ATTEMPT_");
+                    Serial.print(avoidanceAttempts + 1); // 1-based for readability
+                }
+            }
         }
         else
         {
             Serial.print("NORMAL");
+
+            // Report avoidance status if active without emergency
+            if (enableObstacleAvoidance)
+            {
+                Serial.print(":AVOIDANCE_ON");
+
+                // Include success statistics when appropriate
+                if (avoidanceSuccessful && DEBUG_MODE)
+                {
+                    Serial.print("_LAST_SUCCESSFUL");
+                }
+            }
         }
 
         Serial.print(":");
@@ -2106,26 +2391,18 @@ void thunderEffect()
     int nextFlashDelayMin = 1;
     int nextFlashDelayMax = 50;
 
-    for (int flash = 0; flash <= flashCount; flash++)
     {
-        // add variety to color
-        int colorV = getRandomValueOrZero(0, 50);
-        color = thunder_pixels.Color(led_color.red + colorV, led_color.green + colorV, led_color.blue + colorV, flashBrightness);
-
-        int rpt = random(4, 6);
-        for (int i = 0; i < rpt; ++i)
-        {
-            int thunder_led_start = getRandomValueOrZero(0, NUM_THUNDERPIXEL);
-            int thunder_led_end = getRandomValueOrZero(thunder_led_start, NUM_THUNDERPIXEL);
-            thunder_pixels.fill(color, thunder_led_start, thunder_led_end);
-            thunder_pixels.show();
-            delay(random(flashOffsetMin, flashOffsetMax));
-        }
-
-        thunder_pixels.clear();
+        int thunder_led_start = getRandomValueOrZero(0, NUM_THUNDERPIXEL);
+        int thunder_led_end = getRandomValueOrZero(thunder_led_start, NUM_THUNDERPIXEL);
+        thunder_pixels.fill(color, thunder_led_start, thunder_led_end);
         thunder_pixels.show();
-        delay(random(nextFlashDelayMin, nextFlashDelayMax));
+        delay(random(flashOffsetMin, flashOffsetMax));
     }
+
+    thunder_pixels.clear();
+    thunder_pixels.show();
+    delay(random(nextFlashDelayMin, nextFlashDelayMax));
+}
 }
 
 int getRandomValueOrZero(int min, int max)
