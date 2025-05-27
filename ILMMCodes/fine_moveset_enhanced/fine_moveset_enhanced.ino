@@ -2,18 +2,20 @@
 #include <math.h>
 
 // === Pin Definitions ===
-#define RPWM_RIGHT 3
-#define LPWM_RIGHT 2
-#define REN_RIGHT 39
-#define LEN_RIGHT 38
-#define RPWM_LEFT 4
-#define LPWM_LEFT 5
-#define REN_LEFT 44
-#define LEN_LEFT 45
-#define RPWM_BACK 7
-#define LPWM_BACK 6
-#define REN_BACK 51
-#define LEN_BACK 50
+#define RPWM_LEFT 7
+#define LPWM_LEFT 6
+#define REN_LEFT 38
+#define LEN_LEFT 39
+
+#define RPWM_RIGHT 10
+#define LPWM_RIGHT 9
+#define REN_RIGHT 51
+#define LEN_RIGHT 50
+
+#define RPWM_BACK 4 // Updated to match configuration
+#define LPWM_BACK 5 // Updated to match configuration
+#define REN_BACK 44 // Kept original
+#define LEN_BACK 45 // Kept original
 
 // Encoder Pins
 #define ENC_RIGHT_C1 40
@@ -50,9 +52,9 @@ const int REACTION_DELAY = 50;         // Milliseconds between updates
 const int SERIAL_BUFFER_SIZE = 64;
 char serialBuffer[SERIAL_BUFFER_SIZE];
 int bufferIndex = 0;
-bool use3WheelMode = true;   // Default to 3-wheel mode
-int userSpeed = 150;         // Default user speed
-bool debugMode = false;      // Debug output mode
+bool use3WheelMode = true; // Default to 3-wheel mode
+int userSpeed = 150;       // Default user speed
+bool debugMode = false;    // Debug output mode
 
 // === Globals ===
 float distFL, distF, distFR, distBL, distB, distBR;
@@ -257,7 +259,7 @@ void updateDistances()
 
 void setup()
 {
-  Serial.begin(115200);  // Higher baud rate for better communication
+  Serial.begin(115200); // Higher baud rate for better communication
 
   setupMotorPins(motorRight);
   setupMotorPins(motorLeft);
@@ -365,8 +367,8 @@ const float NORMAL_SPEED = 1.0;       // Full speed for normal navigation
 const int PATH_UPDATE_INTERVAL = 100; // ms between path updates
 
 // Autonomous exploration parameters
-const float WALL_FOLLOW_DISTANCE = 60.0; // cm, distance to maintain from walls
-const float TURN_THRESHOLD = 45.0;       // cm, distance to trigger turns
+const float WALL_FOLLOW_DISTANCE = 60.0;          // cm, distance to maintain from walls
+const float TURN_THRESHOLD = 45.0;                // cm, distance to trigger turns
 const unsigned long EXPLORATION_TURN_TIME = 2000; // ms to perform exploration turns
 
 // === COMMUNICATION HANDLER ===
@@ -396,7 +398,8 @@ void processSerialInput()
 // Parse and execute commands
 void parseCommand(const char *cmd)
 {
-  if (debugMode) {
+  if (debugMode)
+  {
     Serial.print("<DEBUG:Received command: ");
     Serial.print(cmd);
     Serial.println(">");
@@ -578,7 +581,8 @@ void parseCommand(const char *cmd)
     // Parse TAG command format
     if (sscanf(cmd + 4, "%d,%f,%d,%d", &tagId, &distance, &direction, &speed) == 4)
     {
-      if (debugMode) {
+      if (debugMode)
+      {
         Serial.print("<DEBUG:TAG ID=");
         Serial.print(tagId);
         Serial.print(", Distance=");
@@ -589,7 +593,7 @@ void parseCommand(const char *cmd)
         Serial.print(speed);
         Serial.println(">");
       }
-      
+
       // Process the tag data with our enhanced navigation
       executeTagCommand(tagId, distance, direction, speed);
       Serial.println("<ACK:TAG>");
@@ -602,7 +606,7 @@ void parseCommand(const char *cmd)
   {
     int direction;
     int speed;
-    
+
     if (sscanf(cmd + 4, "%d,%d", &direction, &speed) == 2)
     {
       executeMovementCommand(direction, speed);
@@ -620,68 +624,69 @@ void executeTagCommand(int tagId, float distance, int direction, int speed)
 {
   // Convert speed to 0-1 range
   float normalizedSpeed = constrain(speed, 0, 255) / 255.0;
-  
+
   // Handle special tag commands
-  if (tagId == 99) {
+  if (tagId == 99)
+  {
     // Special search/rotation commands
     switch (direction)
     {
-      case 5: // Rotate left
-        rotateLeft(normalizedSpeed);
-        break;
-      case 6: // Rotate right
-        rotateRight(normalizedSpeed);
-        break;
-      default:
-        stop();
-    }
-    return;
-  }
-  
-  // Regular movement commands
-  switch (direction)
-  {
-    case 0: // Stop
-      stop();
-      break;
-    case 1: // Forward
-      moveForward(normalizedSpeed);
-      break;
-    case 2: // Backward
-      moveBackward(normalizedSpeed);
-      break;
-    case 3: // Turn left
-      moveLeft(normalizedSpeed);
-      break;
-    case 4: // Turn right
-      moveRight(normalizedSpeed);
-      break;
     case 5: // Rotate left
       rotateLeft(normalizedSpeed);
       break;
     case 6: // Rotate right
       rotateRight(normalizedSpeed);
       break;
-    case 7: // Slide left
-      moveLeft(normalizedSpeed);
-      break;
-    case 8: // Slide right
-      moveRight(normalizedSpeed);
-      break;
-    case 9: // Diagonal forward-left
-      moveForwardLeft(normalizedSpeed);
-      break;
-    case 10: // Diagonal forward-right
-      moveForwardRight(normalizedSpeed);
-      break;
-    case 11: // Diagonal backward-left
-      moveBackwardLeft(normalizedSpeed);
-      break;
-    case 12: // Diagonal backward-right
-      moveBackwardRight(normalizedSpeed);
-      break;
     default:
       stop();
+    }
+    return;
+  }
+
+  // Regular movement commands
+  switch (direction)
+  {
+  case 0: // Stop
+    stop();
+    break;
+  case 1: // Forward
+    moveForward(normalizedSpeed);
+    break;
+  case 2: // Backward
+    moveBackward(normalizedSpeed);
+    break;
+  case 3: // Turn left
+    moveLeft(normalizedSpeed);
+    break;
+  case 4: // Turn right
+    moveRight(normalizedSpeed);
+    break;
+  case 5: // Rotate left
+    rotateLeft(normalizedSpeed);
+    break;
+  case 6: // Rotate right
+    rotateRight(normalizedSpeed);
+    break;
+  case 7: // Slide left
+    moveLeft(normalizedSpeed);
+    break;
+  case 8: // Slide right
+    moveRight(normalizedSpeed);
+    break;
+  case 9: // Diagonal forward-left
+    moveForwardLeft(normalizedSpeed);
+    break;
+  case 10: // Diagonal forward-right
+    moveForwardRight(normalizedSpeed);
+    break;
+  case 11: // Diagonal backward-left
+    moveBackwardLeft(normalizedSpeed);
+    break;
+  case 12: // Diagonal backward-right
+    moveBackwardRight(normalizedSpeed);
+    break;
+  default:
+    stop();
   }
 }
 
@@ -689,50 +694,50 @@ void executeTagCommand(int tagId, float distance, int direction, int speed)
 void executeMovementCommand(int direction, int speed)
 {
   float normalizedSpeed = constrain(speed, 0, 255) / 255.0;
-  
+
   switch (direction)
   {
-    case 0: // Stop
-      stop();
-      break;
-    case 1: // Forward
-      moveForward(normalizedSpeed);
-      break;
-    case 2: // Backward
-      moveBackward(normalizedSpeed);
-      break;
-    case 3: // Turn left
-      moveLeft(normalizedSpeed);
-      break;
-    case 4: // Turn right
-      moveRight(normalizedSpeed);
-      break;
-    case 5: // Rotate left
-      rotateLeft(normalizedSpeed);
-      break;
-    case 6: // Rotate right
-      rotateRight(normalizedSpeed);
-      break;
-    case 7: // Slide left
-      moveLeft(normalizedSpeed);
-      break;
-    case 8: // Slide right
-      moveRight(normalizedSpeed);
-      break;
-    case 9: // Diagonal forward-left
-      moveForwardLeft(normalizedSpeed);
-      break;
-    case 10: // Diagonal forward-right
-      moveForwardRight(normalizedSpeed);
-      break;
-    case 11: // Diagonal backward-left
-      moveBackwardLeft(normalizedSpeed);
-      break;
-    case 12: // Diagonal backward-right
-      moveBackwardRight(normalizedSpeed);
-      break;
-    default:
-      stop();
+  case 0: // Stop
+    stop();
+    break;
+  case 1: // Forward
+    moveForward(normalizedSpeed);
+    break;
+  case 2: // Backward
+    moveBackward(normalizedSpeed);
+    break;
+  case 3: // Turn left
+    moveLeft(normalizedSpeed);
+    break;
+  case 4: // Turn right
+    moveRight(normalizedSpeed);
+    break;
+  case 5: // Rotate left
+    rotateLeft(normalizedSpeed);
+    break;
+  case 6: // Rotate right
+    rotateRight(normalizedSpeed);
+    break;
+  case 7: // Slide left
+    moveLeft(normalizedSpeed);
+    break;
+  case 8: // Slide right
+    moveRight(normalizedSpeed);
+    break;
+  case 9: // Diagonal forward-left
+    moveForwardLeft(normalizedSpeed);
+    break;
+  case 10: // Diagonal forward-right
+    moveForwardRight(normalizedSpeed);
+    break;
+  case 11: // Diagonal backward-left
+    moveBackwardLeft(normalizedSpeed);
+    break;
+  case 12: // Diagonal backward-right
+    moveBackwardRight(normalizedSpeed);
+    break;
+  default:
+    stop();
   }
 }
 
@@ -1164,7 +1169,7 @@ void loop()
 {
   // Process serial commands first
   processSerialInput();
-  
+
   unsigned long currentTime = millis();
 
   // Update sensor readings at fixed intervals
@@ -1174,7 +1179,8 @@ void loop()
     lastUpdateTime = currentTime;
 
     // Debug output if enabled
-    if (debugMode) {
+    if (debugMode)
+    {
       Serial.print("<DEBUG:Distances - FL:");
       Serial.print(distFL);
       Serial.print(" F:");
