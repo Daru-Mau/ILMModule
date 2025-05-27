@@ -98,11 +98,9 @@ bool startObstacleAvoidance(int speed)
 
     // Determine rotation angle based on how tight the space is
     float minDistance = min(leftDist, rightDist);
-    bool isTightSpace = (minDistance < OPTIMAL_AVOIDANCE_DISTANCE);
-
-    // Use larger rotation angle for tighter spaces
+    bool isTightSpace = (minDistance < OPTIMAL_AVOIDANCE_DISTANCE); // Use larger rotation angle for tighter spaces
     avoidanceRotationAngle = isTightSpace ? ROTATION_ANGLE_LARGE : ROTATION_ANGLE_SMALL;
-    avoidanceState = ROTATING_AWAY_STATE;
+    avoidanceState = ROTATING_AWAY;
     avoidanceTimer = millis();
     return true;
 }
@@ -120,7 +118,7 @@ bool continueObstacleAvoidance()
     { // 10-second total timeout
         if (DEBUG_MODE)
             debugPrint("AVOIDANCE_FAILED:TIMEOUT");
-        avoidanceState = IDLE_STATE;
+        avoidanceState = IDLE;
         stopAllMotors();
         return false;
     }
@@ -131,7 +129,7 @@ bool continueObstacleAvoidance()
     {
         if (DEBUG_MODE)
             debugPrint("AVOIDANCE_FAILED:EMERGENCY_STOP");
-        avoidanceState = IDLE_STATE;
+        avoidanceState = IDLE;
         stopAllMotors();
 
         // Try the other direction if this is our first attempt
@@ -145,7 +143,7 @@ bool continueObstacleAvoidance()
                 debugPrint("AVOIDANCE:TRYING_OPPOSITE_DIRECTION");
             }
 
-            avoidanceState = ROTATING_AWAY_STATE;
+            avoidanceState = ROTATING_AWAY;
             avoidanceTimer = currentTime;
             return false; // Still in progress
         }
@@ -162,19 +160,19 @@ bool continueObstacleAvoidance()
     else
     {
         nearestObstacle = min(distFR, distBR);
-    }
-
-    // Dynamic speed calculation: slower when closer to obstacles
+    } // Dynamic speed calculation: slower when closer to obstacles
     float speedFactor = constrain(nearestObstacle / OPTIMAL_AVOIDANCE_DISTANCE, 0.5, 1.0);
-    int avoidanceSpeed = constrain((int)(originalSpeed * speedFactor), MIN_SPEED, originalSpeed); // Execute the current state of the avoidance procedure
+    int avoidanceSpeed = constrain((int)(originalSpeed * speedFactor), MIN_SPEED, originalSpeed);
+
+    // Execute the current state of the avoidance procedure
     switch (avoidanceState)
     {
-    case ROTATING_AWAY_STATE:
+    case ROTATING_AWAY:
         // Check if path ahead is clear before rotating more
         if (distF > SAFE_DISTANCE && ((avoidanceLeftDirection && distFL > SAFE_DISTANCE) ||
                                       (!avoidanceLeftDirection && distFR > SAFE_DISTANCE)))
-        {
-            // Path is clear enough, proceed to moving past            avoidanceState = MOVING_PAST_STATE;
+        { // Path is clear enough, proceed to moving past
+            avoidanceState = MOVING_PAST;
             avoidanceTimer = currentTime;
             if (DEBUG_MODE)
                 debugPrint("AVOIDANCE:PATH_CLEAR_PROCEEDING");
@@ -195,7 +193,7 @@ bool continueObstacleAvoidance()
         unsigned long rotationTime = (avoidanceRotationAngle / 90.0) * ROTATION_TIMEOUT;
         if (currentTime - avoidanceTimer > rotationTime)
         {
-            avoidanceState = MOVING_PAST_STATE;
+            avoidanceState = MOVING_PAST;
             avoidanceTimer = currentTime;
             if (DEBUG_MODE)
             {
@@ -205,13 +203,13 @@ bool continueObstacleAvoidance()
             }
         }
         break;
-    case MOVING_PAST_STATE:
+    case MOVING_PAST:
         // Check if we need to adjust course due to new obstacles
         if ((avoidanceLeftDirection && distFL < MIN_AVOIDANCE_DISTANCE) ||
             (!avoidanceLeftDirection && distFR < MIN_AVOIDANCE_DISTANCE))
         {
             // Need to rotate more to avoid the obstacle
-            avoidanceState = ROTATING_AWAY_STATE;
+            avoidanceState = ROTATING_AWAY;
             avoidanceTimer = currentTime;
             if (DEBUG_MODE)
                 debugPrint("AVOIDANCE:ADJUSTING_ROTATION");
@@ -227,13 +225,13 @@ bool continueObstacleAvoidance()
 
         if (currentTime - avoidanceTimer > passingTime)
         {
-            avoidanceState = ROTATING_BACK_STATE;
+            avoidanceState = ROTATING_BACK;
             avoidanceTimer = currentTime;
             if (DEBUG_MODE)
                 debugPrint("AVOIDANCE:PASSING_COMPLETE");
         }
         break;
-    case ROTATING_BACK_STATE:
+    case ROTATING_BACK:
         // Rotate back to the original direction (opposite of first rotation)
         if (avoidanceLeftDirection)
         {
@@ -242,19 +240,17 @@ bool continueObstacleAvoidance()
         else
         {
             rotateLeft(avoidanceSpeed);
-        }
-
-        // Check if we've rotated back enough or if front path is clear
+        } // Check if we've rotated back enough or if front path is clear
         if ((currentTime - avoidanceTimer > (avoidanceRotationAngle / 90.0) * ROTATION_TIMEOUT) ||
             (distF > SAFE_DISTANCE && distFL > SAFE_DISTANCE && distFR > SAFE_DISTANCE))
         {
-            avoidanceState = RETURNING_TO_PATH_STATE;
+            avoidanceState = RETURNING_TO_PATH;
             avoidanceTimer = currentTime;
             if (DEBUG_MODE)
                 debugPrint("AVOIDANCE:ROTATION_BACK_COMPLETE");
         }
         break;
-    case RETURNING_TO_PATH_STATE:
+    case RETURNING_TO_PATH:
         // Check if path ahead is clear before proceeding
         if (distF < MIN_AVOIDANCE_DISTANCE)
         {
@@ -262,16 +258,15 @@ bool continueObstacleAvoidance()
             {
                 // Try again if we still have obstacles ahead
                 avoidanceAttempts++;
-                avoidanceState = ROTATING_AWAY_STATE;
+                avoidanceState = ROTATING_AWAY;
                 avoidanceTimer = currentTime;
                 if (DEBUG_MODE)
                     debugPrint("AVOIDANCE:NEW_OBSTACLE_DETECTED_RETRYING");
                 break;
             }
             else
-            {
-                // Give up after multiple attempts
-                avoidanceState = IDLE_STATE;
+            { // Give up after multiple attempts
+                avoidanceState = IDLE;
                 if (DEBUG_MODE)
                     debugPrint("AVOIDANCE:FAILED_AFTER_MULTIPLE_ATTEMPTS");
                 return false;
@@ -279,19 +274,17 @@ bool continueObstacleAvoidance()
         }
 
         // Move forward to return to the original path
-        moveForward(avoidanceSpeed);
-
-        // Advance for a set time or until we've returned to the path
+        moveForward(avoidanceSpeed); // Advance for a set time or until we've returned to the path
         if (currentTime - avoidanceTimer > MOVEMENT_TIMEOUT / 2)
         {
-            avoidanceState = IDLE_STATE;
+            avoidanceState = IDLE;
             avoidanceSuccessful = true;
             if (DEBUG_MODE)
                 debugPrint("AVOIDANCE:COMPLETED_SUCCESSFULLY");
             return true; // Obstacle avoidance complete
         }
         break;
-    case IDLE_STATE:
+    case IDLE:
     default:
         return true; // Nothing to do
     }
@@ -317,7 +310,7 @@ bool navigateAroundObstacle(int speed)
                 debugPrint("AVOIDANCE:COMPLETED_OBSTACLE_NAVIGATION");
             }
             // Reset state to prepare for next obstacle
-            avoidanceState = IDLE_STATE;
+            avoidanceState = IDLE;
         }
 
         return result;

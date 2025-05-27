@@ -120,16 +120,22 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 #define LPWM_LEFT 6
 #define REN_LEFT 42
 #define LEN_LEFT 43
+#define ENC_LEFT_C1 48
+#define ENC_LEFT_C2 49
 
 #define RPWM_RIGHT 10
 #define LPWM_RIGHT 9
 #define REN_RIGHT 51
 #define LEN_RIGHT 50
+#define ENC_RIGHT_C1 53
+#define ENC_RIGHT_C2 52
 
 #define RPWM_BACK 4 // Updated to match configuration
 #define LPWM_BACK 5 // Updated to match configuration
 #define REN_BACK 46 // Kept original
 #define LEN_BACK 47 // Kept original
+#define ENC_BACK_C1 44
+#define ENC_BACK_C2 45
 
 // === Struct Definitions ===
 // Define these before any functions that use them
@@ -141,14 +147,6 @@ struct Motor
     int LEN;
     float currentSpeed;
 };
-
-// Encoder Pins
-#define ENC_RIGHT_C1 53
-#define ENC_RIGHT_C2 52
-#define ENC_LEFT_C1 48
-#define ENC_LEFT_C2 49
-#define ENC_BACK_C1 44
-#define ENC_BACK_C2 45
 
 /* // Ultrasonic Sensor Pins - Normal Setting
 #define TRIG_BL 26
@@ -1477,7 +1475,8 @@ void moveDiagonalBackwardRight(int speed)
 }
 void loop()
 {
-    // ==== Check if master override is active (via pin or I2C) ====    checkOverridePin();
+    // ==== Check if master override is active (via pin or I2C) ====
+    checkOverridePin();
 
     // If master override is active, ONLY handle I2C commands, stop all other functionality
     if (masterOverrideActive)
@@ -1506,6 +1505,16 @@ void loop()
         // The master should request this through I2C, but we can also proactively send it
         if (DEBUG_MODE)
         {
+            Serial.println("<LOCALIZATION_MODULE:READY>");
+        }
+
+        // Can optionally send a ready status via I2C here if needed
+        // uint8_t response = (MASTER_ADDR << 5) | TELL_READY_CMD;
+        // Wire.beginTransmission(MASTER_ADDR);
+        // Wire.write(response);
+        // Wire.endTransmission();
+    }
+
     // Process serial commands
     while (Serial.available() > 0)
     {
@@ -1523,27 +1532,11 @@ void loop()
     {
         lastControlLoop = now;
 
-        // Check emergency stop conditions directionally with improved consensus
-        // For front and back, require at least 2 sensors to agree OR the center sensor to be triggered
-        // This reduces false positives from occasional noise in single sensor readings
-        bool frontMainSensor = (distF < CRITICAL_DISTANCE);
-        bool frontSideSensors = ((distFL < CRITICAL_DISTANCE && distFR < CRITICAL_DISTANCE) ||
-                                 (distFL < CRITICAL_DISTANCE * 0.7) || // Extra sensitive to very close objects
-                                 (distFR < CRITICAL_DISTANCE * 0.7));  // on either side
-        bool frontDanger = frontMainSensor || frontSideSensors;
-
-        bool backMainSensor = (distB < CRITICAL_DISTANCE);
-        bool backSideSensors = ((distBL < CRITICAL_DISTANCE && distBR < CRITICAL_DISTANCE) ||
-                                (distBL < CRITICAL_DISTANCE * 0.7) ||
-                                (distBR < CRITICAL_DISTANCE * 0.7));
-        bool backDanger = backMainSensor || backSideSensors;
-
-        // Side emergency stops are triggered if at least one sensor is very close (70% of critical)
-        // or both sensors are near critical distance
-        bool leftDanger = ((distFL < CRITICAL_DISTANCE * 0.8) || (distBL < CRITICAL_DISTANCE * 0.8) ||
-                           (distFL < CRITICAL_DISTANCE && distBL < CRITICAL_DISTANCE));
-        bool rightDanger = ((distFR < CRITICAL_DISTANCE * 0.8) || (distBR < CRITICAL_DISTANCE * 0.8) ||
-                            (distFR < CRITICAL_DISTANCE && distBR < CRITICAL_DISTANCE));
+        // Check emergency stop conditions directionally
+        bool frontDanger = (distF < CRITICAL_DISTANCE || distFL < CRITICAL_DISTANCE || distFR < CRITICAL_DISTANCE);
+        bool backDanger = (distB < CRITICAL_DISTANCE || distBL < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
+        bool leftDanger = (distFL < CRITICAL_DISTANCE || distBL < CRITICAL_DISTANCE);
+        bool rightDanger = (distFR < CRITICAL_DISTANCE || distBR < CRITICAL_DISTANCE);
 
         // Update directional emergency flags
         if (frontDanger != frontEmergencyStop)
@@ -1558,27 +1551,13 @@ void loop()
                 debugPrint("EMERGENCY_RELEASED:FRONT");
             }
         }
+
         if (backDanger != backEmergencyStop)
         {
             backEmergencyStop = backDanger;
-            if (backEmergencyStop)
+            if (backEmergencyStop && DEBUG_MODE)
             {
-                // Stop backward movement immediately when obstacles detected behind
-                // Check if motors are currently moving backward (left FORWARD, right BACKWARD)
-                if (motorLeft.currentSpeed > 0 && motorRight.currentSpeed > 0)
-                {
-                    // Left is FORWARD and right is BACKWARD means robot is moving backward
-                    if (DEBUG_MODE)
-                    {
-                        debugPrint("EMERGENCY_STOP:BACK - Stopping motors immediately");
-                    }
-                    stopAllMotors();
-                }
-
-                if (DEBUG_MODE)
-                {
-                    debugPrint("EMERGENCY_STOP:BACK");
-                }
+                debugPrint("EMERGENCY_STOP:BACK");
             }
             else if (!backEmergencyStop && DEBUG_MODE)
             {
@@ -1614,10 +1593,7 @@ void loop()
 
         // Set overall emergencyStop flag (for compatibility with existing code)
         bool prevEmergencyStop = emergencyStop;
-        emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop; // Dynamically adjust obstacle avoidance parameters based on the environment
-        // Always check emergency status to update avoidance parameters, even if obstacle
-        // avoidance is not currently active - this ensures proper parameters when it's enabled
-        checkEmergencyStatus();
+        emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
 
         // Don't stop all motors when an emergency stop is detected - instead let the
         // direction-specific emergency stops control movement in executeMovement().
@@ -2102,6 +2078,9 @@ void parseCommand(const char *cmd)
                 // Report wheel mode
                 debugPrint(useThreeWheels ? "MODE:THREE_WHEEL" : "MODE:TWO_WHEEL");
 
+                // Report obstacle avoidance status
+                debugPrint(enableObstacleAvoidance ? "OBSTACLE_AVOIDANCE:ENABLED" : "OBSTACLE_AVOIDANCE:DISABLED");
+
                 // Report pin state for master override
                 sprintf(buffer, "OVERRIDE_PIN_STATE:%s",
                         (digitalRead(I2C_MASTER_OVERRIDE_PIN) == LOW) ? "LOW(ACTIVE)" : "HIGH(INACTIVE)");
@@ -2116,8 +2095,10 @@ void parseCommand(const char *cmd)
             Serial.println(">");
         }
         return;
-    } // Handle obstacle avoidance command
-    if (strcmp(command, "AVOIDANCE") == 0)
+    }
+
+    // Handle AVOID command for obstacle avoidance
+    if (strcmp(command, "AVOID") == 0)
     {
         // Parse avoidance parameter: 0 = off, 1 = on
         int mode = 0;
@@ -2125,27 +2106,26 @@ void parseCommand(const char *cmd)
         if (sscanf(params, "%d", &mode) == 1)
         {
             enableObstacleAvoidance = (mode == 1);
-
-            // Reset avoidance state when turning off
-            if (!enableObstacleAvoidance)
+            // Reset avoidance state when enabling/disabling
+            if (avoidanceState != IDLE)
             {
                 avoidanceState = IDLE;
+                avoidanceAttempts = 0;
+                avoidanceSuccessful = false;
             }
-
-            Serial.print("<ACK:AVOIDANCE:");
+            Serial.print("<ACK:AVOID:");
             Serial.print(enableObstacleAvoidance ? "ENABLED" : "DISABLED");
             Serial.println(">");
 
-            // If debug enabled, send additional info
             if (DEBUG_MODE)
             {
-                debugPrint(enableObstacleAvoidance ? "Obstacle avoidance enabled - Robot will try to navigate around obstacles" : "Obstacle avoidance disabled - Robot will stop at obstacles");
+                debugPrint(enableObstacleAvoidance ? "OBSTACLE_AVOIDANCE:ENABLED - Robot will try to navigate around obstacles" : "OBSTACLE_AVOIDANCE:DISABLED - Robot will stop at obstacles");
             }
         }
         else
         {
             // No parameter, just report current status
-            Serial.print("<ACK:AVOIDANCE_STATUS:");
+            Serial.print("<ACK:AVOID_STATUS:");
             Serial.print(enableObstacleAvoidance ? "ENABLED" : "DISABLED");
             Serial.println(">");
         }
@@ -2162,7 +2142,8 @@ void parseCommand(const char *cmd)
         return;
     }
 
-    // Handle STATUS command to report current state    if (strcmp(command, "STATUS") == 0)
+    // Handle STATUS command to report current state
+    if (strcmp(command, "STATUS") == 0)
     {
         // Report robot status including emergency flags and sensor readings
         Serial.print("<ACK:STATUS:");
@@ -2173,49 +2154,11 @@ void parseCommand(const char *cmd)
             Serial.print(frontEmergencyStop ? "F" : "");
             Serial.print(backEmergencyStop ? "B" : "");
             Serial.print(leftEmergencyStop ? "L" : "");
-            Serial.print(rightEmergencyStop ? "R" : ""); // Report avoidance status if active during emergency
-            if (enableObstacleAvoidance && avoidanceState != IDLE)
-            {
-                Serial.print(":AVOIDING");
-                // Include more detailed state information when in debug mode
-                if (DEBUG_MODE)
-                {
-                    switch (avoidanceState)
-                    {
-                    case ROTATING_AWAY:
-                        Serial.print("_ROTATING");
-                        Serial.print(avoidanceLeftDirection ? "_LEFT" : "_RIGHT");
-                        break;
-                    case MOVING_PAST:
-                        Serial.print("_PASSING");
-                        break;
-                    case ROTATING_BACK:
-                        Serial.print("_RETURNING");
-                        break;
-                    case RETURNING_TO_PATH:
-                        Serial.print("_FINALIZING");
-                        break;
-                    }
-                    Serial.print("_ATTEMPT_");
-                    Serial.print(avoidanceAttempts + 1); // 1-based for readability
-                }
-            }
+            Serial.print(rightEmergencyStop ? "R" : "");
         }
         else
         {
             Serial.print("NORMAL");
-
-            // Report avoidance status if active without emergency
-            if (enableObstacleAvoidance)
-            {
-                Serial.print(":AVOIDANCE_ON");
-
-                // Include success statistics when appropriate
-                if (avoidanceSuccessful && DEBUG_MODE)
-                {
-                    Serial.print("_LAST_SUCCESSFUL");
-                }
-            }
         }
 
         Serial.print(":");
