@@ -247,6 +247,16 @@ bool continueObstacleAvoidance();
 bool startObstacleAvoidance(int speed);
 void checkEmergencyStatus();
 
+// Forward declarations for movement functions
+void moveForward(int speed);
+void moveBackward(int speed);
+void turnLeft(int speed);
+void turnRight(int speed);
+void slideLeft(int speed);
+void slideRight(int speed);
+void diagLeft(int speed);
+void diagRight(int speed);
+
 // === Globals ===
 bool emergencyStop = false;
 bool frontEmergencyStop = false; // Blocks forward movement
@@ -1496,16 +1506,6 @@ void loop()
         // The master should request this through I2C, but we can also proactively send it
         if (DEBUG_MODE)
         {
-            Serial.println("<LOCALIZATION_MODULE:READY>");
-        }
-
-        // Can optionally send a ready status via I2C here if needed
-        // uint8_t response = (MASTER_ADDR << 5) | TELL_READY_CMD;
-        // Wire.beginTransmission(MASTER_ADDR);
-        // Wire.write(response);
-        // Wire.endTransmission();
-    }
-
     // Process serial commands
     while (Serial.available() > 0)
     {
