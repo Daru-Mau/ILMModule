@@ -255,12 +255,24 @@ void slideRight(int speed);
 void diagLeft(int speed);
 void diagRight(int speed);
 
+// Forward declarations for deceleration functions from smooth_deceleration.ino
+extern bool decelerationActive;
+extern void startSmoothDeceleration();
+extern void handleSmoothDeceleration();
+extern void emergencyStopAllMotors();
+
 // === Globals ===
 bool emergencyStop = false;
 bool frontEmergencyStop = false; // Blocks forward movement
 bool backEmergencyStop = false;  // Blocks backward movement
 bool leftEmergencyStop = false;  // Blocks left movement
 bool rightEmergencyStop = false; // Blocks right movement
+
+// Motor direction tracking variables
+Direction leftDir = STOP;  // Direction tracking for left motor
+Direction rightDir = STOP; // Direction tracking for right motor
+Direction backDir = STOP;  // Direction tracking for back motor
+
 float distFL, distF, distFR, distBL, distB, distBR;
 int movementMode = 0;        // 0=Normal, 1=Rotation
 bool useThreeWheels = false; // Flag to select between 2-wheel (false) and 3-wheel (true) configuration
@@ -356,7 +368,6 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
     // Only apply minimum speed constraint to avoid stalling motors
     if (speed > 0 && speed < MIN_SPEED)
         speed = MIN_SPEED;
-
     switch (dir)
     {
     case FORWARD:
@@ -368,23 +379,31 @@ void moveMotor(Motor &motor, Direction dir, float targetSpeed)
         analogWrite(motor.LPWM, speed);
         break;
     case STOP:
-        analogWrite(motor.RPWM, 0);
-        analogWrite(motor.LPWM, 0);
-        motor.currentSpeed = 0;
+        // Instead of immediately stopping, we'll let the deceleration process handle it
+        // If deceleration is active, don't force currentSpeed to 0 here
+        if (!decelerationActive)
+        {
+            analogWrite(motor.RPWM, 0);
+            analogWrite(motor.LPWM, 0);
+            motor.currentSpeed = 0;
+        }
         break;
     }
 }
 
 void stopAllMotors()
 {
-    moveMotor(motorLeft, STOP, 0);
-    moveMotor(motorRight, STOP, 0);
-    moveMotor(motorBack, STOP, 0);
+    // Start the smooth deceleration process
+    startSmoothDeceleration();
 
+    // If master override is active, indicate in debug mode
     if (masterOverrideActive && DEBUG_MODE)
     {
         debugPrint("STOPPED:MASTER_OVERRIDE");
     }
+
+    // In case of safety issues, we still need a way to immediately stop
+    // This function keeps the smooth deceleration logic but can be bypassed with emergencyStopAllMotors()
 }
 
 // Safety-focused dynamic speed calculation to scale down desired speed when obstacles detected
@@ -1513,13 +1532,14 @@ void loop()
         // Wire.beginTransmission(MASTER_ADDR);
         // Wire.write(response);
         // Wire.endTransmission();
-    }
-
-    // Process serial commands
+    } // Process serial commands
     while (Serial.available() > 0)
     {
         processSerialInput();
     }
+
+    // Handle smooth deceleration if active
+    handleSmoothDeceleration();
 
     // Update sensor readings at fixed intervals
     unsigned long now = millis();
@@ -1589,11 +1609,21 @@ void loop()
             {
                 debugPrint("EMERGENCY_RELEASED:RIGHT");
             }
-        }
-
-        // Set overall emergencyStop flag (for compatibility with existing code)
+        } // Set overall emergencyStop flag (for compatibility with existing code)
         bool prevEmergencyStop = emergencyStop;
         emergencyStop = frontEmergencyStop || backEmergencyStop || leftEmergencyStop || rightEmergencyStop;
+
+        // For critical emergencies (all sensors detecting obstacles), use the immediate stop function
+        if (emergencyStop && !prevEmergencyStop &&
+            frontEmergencyStop && backEmergencyStop &&
+            leftEmergencyStop && rightEmergencyStop)
+        {
+            // This is a severe case - something is very close on all sides
+            // Use emergency stop to prevent any collision
+            emergencyStopAllMotors();
+            if (DEBUG_MODE)
+                debugPrint("CRITICAL_EMERGENCY:ALL_SIDES_BLOCKED");
+        }
 
         // Don't stop all motors when an emergency stop is detected - instead let the
         // direction-specific emergency stops control movement in executeMovement().
