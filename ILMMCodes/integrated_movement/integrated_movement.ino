@@ -118,8 +118,8 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 
 #define RPWM_LEFT 7
 #define LPWM_LEFT 6
-#define REN_LEFT 38
-#define LEN_LEFT 39
+#define REN_LEFT 42
+#define LEN_LEFT 43
 
 #define RPWM_RIGHT 10
 #define LPWM_RIGHT 9
@@ -128,8 +128,8 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 
 #define RPWM_BACK 4 // Updated to match configuration
 #define LPWM_BACK 5 // Updated to match configuration
-#define REN_BACK 44 // Kept original
-#define LEN_BACK 45 // Kept original
+#define REN_BACK 46 // Kept original
+#define LEN_BACK 47 // Kept original
 
 // === Struct Definitions ===
 // Define these before any functions that use them
@@ -143,12 +143,12 @@ struct Motor
 };
 
 // Encoder Pins
-/* #define ENC_RIGHT_C1 40
-#define ENC_RIGHT_C2 41
-#define ENC_LEFT_C1 46
-#define ENC_LEFT_C2 47
-#define ENC_BACK_C1 52
-#define ENC_BACK_C2 53 */
+#define ENC_RIGHT_C1 53
+#define ENC_RIGHT_C2 52
+#define ENC_LEFT_C1 48
+#define ENC_LEFT_C2 49
+#define ENC_BACK_C1 44
+#define ENC_BACK_C2 45
 
 /* // Ultrasonic Sensor Pins - Normal Setting
 #define TRIG_BL 26
@@ -180,13 +180,13 @@ struct Motor
 #define ECHO_BR 27
 
 // === Lighting Pin Definition ===
-#define THUNDER_LED_PIN 42 // THUNDER LED PIN
+#define THUNDER_LED_PIN 36 // THUNDER LED PIN
 
 #define NUM_THUNDERPIXEL 50 // NeoPixel thunder
 
-#define VERTICAL_LED_PIN_1 43 // VERTICAL LED PIN 1
-#define VERTICAL_LED_PIN_2 44 // VERTICAL LED PIN 2
-#define VERTICAL_LED_PIN_3 45 // VERTICAL LED PIN 3
+#define VERTICAL_LED_PIN_1 37 // VERTICAL LED PIN 1
+#define VERTICAL_LED_PIN_2 38 // VERTICAL LED PIN 2
+#define VERTICAL_LED_PIN_3 39 // VERTICAL LED PIN 3
 
 #define NUM_VERTICALPIXEL 20 // NeoPixel vertical
 #define NUM_VERTICAL_STRIP 3 // Vertical Strip number
@@ -827,24 +827,25 @@ void receiveEvent(int howMany)
 // Function to handle master's request for data
 void requestEvent()
 {
-    // Send current status to master when requested
-    if (masterOverrideActive)
+    // Create a response byte with destination address and command
+    uint8_t response;
+
+    if (moduleReady && !masterOverrideActive)
     {
-        Wire.write('S'); // Suspended/Idle
-    }
-    else if (emergencyStop)
-    {
-        Wire.write('E'); // Emergency stop
+        // Format: [MASTER_ADDR:3][TELL_READY_CMD:5]
+        response = (MASTER_ADDR << 5) | TELL_READY_CMD;
     }
     else
     {
-        Wire.write('A'); // Active
+        // Send null response if not ready or in override mode
+        response = 0;
     }
 
-    // Add a debug log for the request event
+    Wire.write(response);
+
     if (DEBUG_MODE)
     {
-        debugPrint("LOCALIZATION_MODULE:REQUEST_EVENT_HANDLED");
+        debugPrint("I2C:REQUEST_EVENT_HANDLED");
     }
 }
 
