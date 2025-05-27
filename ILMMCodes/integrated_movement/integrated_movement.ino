@@ -45,8 +45,8 @@ bool moduleReady = false;             // Flag to indicate if module is ready
 #define COMMAND_BUFFER_SIZE 64
 #define CONTROL_LOOP_INTERVAL 50 // 20Hz control loop
 // Changed from #define to global variables so they can be modified at runtime
-int MAX_SPEED = 100;
-int MIN_SPEED = 50;
+int MAX_SPEED = 200;
+int MIN_SPEED = 100;
 int MAX_ROTATION_SPEED = 65; // Maximum speed for rotation to prevent escalation
 
 boolean DEBUG_MODE = false; // Keep this false by default, but allow runtime changes
@@ -114,19 +114,24 @@ const float ACCEL_RATE = 0.15f; // Speed change per cycle (0-1)
 
 #define RPWM_LEFT 7
 #define LPWM_LEFT 6
-#define REN_LEFT 38
-#define LEN_LEFT 39
+#define REN_LEFT 42
+#define LEN_LEFT 43
+#define ENC_LEFT_C1 48
+#define ENC_LEFT_C2 49
 
 #define RPWM_RIGHT 10
 #define LPWM_RIGHT 9
 #define REN_RIGHT 51
 #define LEN_RIGHT 50
+#define ENC_RIGHT_C1 53
+#define ENC_RIGHT_C2 52
 
 #define RPWM_BACK 4 // Updated to match configuration
 #define LPWM_BACK 5 // Updated to match configuration
-#define REN_BACK 44 // Kept original
-#define LEN_BACK 45 // Kept original
-
+#define REN_BACK 46 // Kept original
+#define LEN_BACK 47 // Kept original
+#define ENC_BACK_C1 44
+#define ENC_BACK_C2 45
 // === Struct Definitions ===
 // Define these before any functions that use them
 struct Motor
@@ -137,14 +142,6 @@ struct Motor
     int LEN;
     float currentSpeed;
 };
-
-// Encoder Pins
-#define ENC_RIGHT_C1 40
-#define ENC_RIGHT_C2 41
-#define ENC_LEFT_C1 46
-#define ENC_LEFT_C2 47
-#define ENC_BACK_C1 52
-#define ENC_BACK_C2 53
 
 /* // Ultrasonic Sensor Pins - Normal Setting
 #define TRIG_BL 26
