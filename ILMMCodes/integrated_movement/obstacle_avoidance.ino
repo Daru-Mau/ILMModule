@@ -10,19 +10,16 @@
 
 // Enum declaration - using forward reference since it's already defined in integrated_movement.ino
 enum AvoidanceState;
-extern AvoidanceState IDLE;
-extern AvoidanceState ROTATING_AWAY;
-extern AvoidanceState MOVING_PAST;
-extern AvoidanceState ROTATING_BACK;
-extern AvoidanceState RETURNING_TO_PATH;
 extern AvoidanceState avoidanceState;
+// The enum values aren't variables, so we don't need to declare them extern
+// We'll use the enum values directly
 
 // External variables from integrated_movement.ino
 extern float distFL, distF, distFR, distBL, distB, distBR;
 extern bool leftEmergencyStop, rightEmergencyStop;
 extern bool DEBUG_MODE;
 extern int MIN_SPEED;
-extern float SAFE_DISTANCE;
+extern const float SAFE_DISTANCE;
 extern const float MIN_AVOIDANCE_DISTANCE;
 extern const float OPTIMAL_AVOIDANCE_DISTANCE;
 extern int originalSpeed;
@@ -48,11 +45,8 @@ extern void moveForward(int speed);
 // These are automatically included in Arduino but need to be declared for the compiler when files are split
 #include <Arduino.h>
 
-// These make sure we have access to standard Arduino functions
-extern unsigned long millis();
-extern float min(float a, float b);
-extern float constrain(float value, float min, float max);
-extern int constrain(int value, int min, int max);
+// These are built-in Arduino functions so we don't need to redeclare them
+// Remove the min() and constrain() declarations as they're already defined in Arduino's core
 extern int sprintf(char *str, const char *format, ...);
 
 // Local variable for storing the starting angle (not used in current implementation)
@@ -328,6 +322,8 @@ bool navigateAroundObstacle(int speed)
             }
             // Reset state to prepare for next obstacle
             avoidanceState = IDLE;
+            avoidanceAttempts = 0;
+            // Note: We don't reset avoidanceSuccessful here because moveForward needs to read it
         }
 
         return result;

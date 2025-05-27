@@ -241,6 +241,12 @@ enum AvoidanceState
     RETURNING_TO_PATH // Moving forward to return to original path
 };
 
+// Forward declarations for obstacle avoidance functions
+bool navigateAroundObstacle(int speed);
+bool continueObstacleAvoidance();
+bool startObstacleAvoidance(int speed);
+void checkEmergencyStatus();
+
 // === Globals ===
 bool emergencyStop = false;
 bool frontEmergencyStop = false; // Blocks forward movement
@@ -660,6 +666,38 @@ float readUltrasonicDistance(int trigPin, int echoPin)
     return SAFE_DISTANCE * 1.5; // Return a value that won't trigger slowdown
 }
 
+// Helper function to filter unreliable readings
+float filterReading(float prevValue, float newValue, int trigPin = -1, int echoPin = -1)
+{
+    // If reading jumps by more than 50% and is less than the safe distance,
+    // be conservative and use the smaller value
+    if (abs(newValue - prevValue) > (prevValue * 0.5) && newValue < SAFE_DISTANCE)
+    {
+        // Verify with an additional reading using the correct sensor pins if provided
+        // Otherwise default to using previous pins as a fallback
+        float verifyValue;
+        if (trigPin != -1 && echoPin != -1)
+        {
+            verifyValue = readUltrasonicDistance(trigPin, echoPin);
+        }
+        else
+        {
+            // Fall back to original behavior as a safety measure
+            verifyValue = readUltrasonicDistance(TRIG_FL, ECHO_FL);
+        }
+
+        if (abs(verifyValue - newValue) < abs(verifyValue - prevValue))
+        {
+            return newValue; // New reading confirmed
+        }
+        else
+        {
+            return prevValue; // Keep previous reading
+        }
+    }
+    return newValue; // Accept new reading
+}
+
 void updateDistances()
 {
     // Read all sensor distances with filtering to prevent erratic behavior
@@ -721,38 +759,6 @@ void updateDistances()
     prevBL = distBL;
     prevB = distB;
     prevBR = distBR;
-}
-
-// Helper function to filter unreliable readings
-float filterReading(float prevValue, float newValue, int trigPin = -1, int echoPin = -1)
-{
-    // If reading jumps by more than 50% and is less than the safe distance,
-    // be conservative and use the smaller value
-    if (abs(newValue - prevValue) > (prevValue * 0.5) && newValue < SAFE_DISTANCE)
-    {
-        // Verify with an additional reading using the correct sensor pins if provided
-        // Otherwise default to using previous pins as a fallback
-        float verifyValue;
-        if (trigPin != -1 && echoPin != -1)
-        {
-            verifyValue = readUltrasonicDistance(trigPin, echoPin);
-        }
-        else
-        {
-            // Fall back to original behavior as a safety measure
-            verifyValue = readUltrasonicDistance(TRIG_FL, ECHO_FL);
-        }
-
-        if (abs(verifyValue - newValue) < abs(verifyValue - prevValue))
-        {
-            return newValue; // New reading confirmed
-        }
-        else
-        {
-            return prevValue; // Keep previous reading
-        }
-    }
-    return newValue; // Accept new reading
 }
 
 // === I2C Functions ===
@@ -1106,8 +1112,7 @@ void moveForward(int speed)
     // If we're in the middle of an obstacle avoidance procedure, continue it
     if (avoidanceState != IDLE && enableObstacleAvoidance)
     {
-        bool result = continueObstacleAvoidance();
-        // Reset avoidance after completion for safety
+        bool result = continueObstacleAvoidance(); // Reset avoidance after completion for safety
         if (result)
         {
             // Report success only if avoidance was actually successful
@@ -1124,6 +1129,7 @@ void moveForward(int speed)
             // reset state to prepare for the next obstacle
             avoidanceAttempts = 0;
             avoidanceState = IDLE;
+            avoidanceSuccessful = false; // Reset success flag
         }
         return;
     }
@@ -1461,8 +1467,7 @@ void moveDiagonalBackwardRight(int speed)
 }
 void loop()
 {
-    // ==== Check if master override is active (via pin or I2C) ====
-    checkOverridePin();
+    // ==== Check if master override is active (via pin or I2C) ====    checkOverridePin();
 
     // If master override is active, ONLY handle I2C commands, stop all other functionality
     if (masterOverrideActive)
@@ -1520,7 +1525,8 @@ void loop()
 
         // Check emergency stop conditions directionally with improved consensus
         // For front and back, require at least 2 sensors to agree OR the center sensor to be triggered
-        // This reduces false positives from occasional noise in single sensor readings        bool frontMainSensor = (distF < CRITICAL_DISTANCE);
+        // This reduces false positives from occasional noise in single sensor readings
+        bool frontMainSensor = (distF < CRITICAL_DISTANCE);
         bool frontSideSensors = ((distFL < CRITICAL_DISTANCE && distFR < CRITICAL_DISTANCE) ||
                                  (distFL < CRITICAL_DISTANCE * 0.7) || // Extra sensitive to very close objects
                                  (distFR < CRITICAL_DISTANCE * 0.7));  // on either side
@@ -2403,7 +2409,6 @@ void thunderEffect()
     thunder_pixels.clear();
     thunder_pixels.show();
     delay(random(nextFlashDelayMin, nextFlashDelayMax));
-}
 }
 
 int getRandomValueOrZero(int min, int max)
