@@ -511,7 +511,7 @@ The navigation system implements:
 \subsubsection{Motor Control System}
 The motor control implementation features:
 \begin{itemize}
-    \item Smooth acceleration and deceleration
+    \item Smooth acceleration and deceleration with direction preservation
     \item Dynamic speed adjustment based on obstacles
     \item Precise holonomic movement control
     \item Emergency stop with motor braking
@@ -1448,6 +1448,47 @@ During our testing phase, we encountered several challenges and limitations:
     \item \textbf{Mechanical Backlash}: Gear reduction in motors introduced ~2° of backlash, affecting precise positioning
 \end{itemize}
 
+\subsubsection{Smooth Deceleration System}
+Our implementation of smooth deceleration presented unique challenges and solutions:
+
+\begin{itemize}
+    \item \textbf{Direction Tracking}: Maintaining direction information during deceleration required global variable coordination between modules
+    \item \textbf{Rate Control}: We determined a deceleration rate of 0.15 per cycle provided optimal balance between smoothness and responsiveness
+    \item \textbf{Safety Integration}: The system required careful coordination with emergency stop procedures to ensure safety wasn't compromised
+    \item \textbf{File Structure}: Code modularization necessitated proper extern declarations and variable sharing between files
+\end{itemize}
+
+\begin{lstlisting}[language=C, basicstyle=\ttfamily\footnotesize, frame=single, xleftmargin=10mm, xrightmargin=10mm]
+// Direction tracking implementation
+Direction leftDir = STOP;  // Direction tracking for left motor
+Direction rightDir = STOP; // Direction tracking for right motor
+Direction backDir = STOP;  // Direction tracking for back motor
+
+// Core deceleration function
+bool smoothDecelerateMotor(Motor &motor, Direction currentDir) {
+    // Calculate new speed with smooth deceleration
+    float newSpeed = max(0, motor.currentSpeed - (MAX_SPEED * decelerationRate));
+    motor.currentSpeed = newSpeed;
+    
+    // Apply PWM based on tracked direction
+    switch (currentDir) {
+    case FORWARD:
+        analogWrite(motor.RPWM, speedInt);
+        analogWrite(motor.LPWM, 0);
+        break;
+    case BACKWARD:
+        analogWrite(motor.RPWM, 0);
+        analogWrite(motor.LPWM, speedInt);
+        break;
+    case STOP:
+        // Do nothing - already stopped
+        break;
+    }
+    
+    return (motor.currentSpeed <= 0);
+}
+\end{lstlisting}
+
 \subsubsection{Movement Constraints}
 \begin{itemize}
     \item \textbf{Surface Dependency}: Omni-wheel performance varied significantly based on floor texture and cleanliness
@@ -1679,12 +1720,20 @@ The testing phase validated our core design decisions:
 \subsubsection{Development Impact}
 Testing results directly influenced several design refinements:
 \begin{itemize}
-    \item Optimized sensor timing to prevent interference
-    \item Adjusted motor control parameters for smoother movement
-    \item Implemented additional error checking in sensor readings
-    \item Enhanced emergency stop response based on safety testing
+    \item Implementation of inter-file direction tracking for the smooth deceleration system
+    \item Addition of global direction variables (leftDir, rightDir, backDir) to track motor states
+    \item Improved coordination between movement control and deceleration modules
+    \item Better error handling for unexpected motor states during transitions
+    \item Enhanced safety mechanisms to prevent compiler errors from affecting critical operations
 \end{itemize}
 
-This testing phase not only validated our implementation but also provided valuable insights for future iterations of the project.
+\subsubsection{Integration Challenges}
+The most valuable lessons emerged from resolving integration challenges:
+\begin{itemize}
+    \item Proper inter-file variable declarations proved critical for system stability
+    \item Motor direction tracking required synchronized access across multiple code files
+    \item Emergency stop functionality needed careful coordination with smooth deceleration
+    \item Object avoidance systems required coordinated access to motor control
+\end{itemize}
 
-\end{document}
+The smooth deceleration system in particular highlighted the importance of proper variable scope and declaration. By implementing global direction tracking variables with proper extern declarations, we resolved undefined reference errors and achieved seamless coordination between the movement control system and deceleration processes.

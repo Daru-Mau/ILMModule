@@ -18,6 +18,14 @@
 3. Created documentation:
    - `APRILTAG_UART_README.md` - README file explaining the integration
 
+4. Enhanced smooth deceleration system:
+
+   - Added global direction tracking variables in `integrated_movement.ino`
+   - Implemented proper extern declarations in `smooth_deceleration.ino`
+   - Improved direction preservation during deceleration
+   - Fixed undefined reference errors in direction tracking
+   - Ensured proper coordination between movement and deceleration systems
+
 ## Benefits of UART Communication
 
 The UART communication module provides several advantages:

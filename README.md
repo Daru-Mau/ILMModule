@@ -7,7 +7,7 @@ A robust localization and navigation system for an omnidirectional robot featuri
 - **Omnidirectional Movement Control**
 
   - Holonomic drive system with three-wheel configuration
-  - Smooth acceleration and deceleration
+  - Smooth acceleration and deceleration with direction preservation
   - Precise position and orientation control
   - Maximum safe speed: 0.5 m/s
 
@@ -105,6 +105,26 @@ A robust localization and navigation system for an omnidirectional robot featuri
    - Check AprilTag detection accuracy with `test_apriltag_uart.py`
    - Test UART communication with `test_uart_communication.py`
    - Validate emergency stop functionality
+
+## Component Details
+
+### Smooth Deceleration System
+
+The system implements a sophisticated smooth deceleration mechanism for improved safety and mechanical longevity:
+
+- **Direction Tracking**: Each motor's direction (FORWARD, BACKWARD, STOP) is consistently tracked
+- **Gradual Speed Reduction**: Progressive PWM reduction at 0.15 rate per cycle
+- **Multi-level Safety Controls**:
+  - Normal deceleration for standard stops (preserves direction information)
+  - Emergency bypass for critical situations
+  - Obstruction-triggered deceleration
+- **Integration Points**:
+  - Seamlessly integrates with obstacle avoidance system
+  - Coordinates with dynamic speed calculations
+  - Respects emergency stop signals
+  - Preserves motor direction data across file boundaries
+
+The deceleration system effectively prevents jerky stops, reduces mechanical stress, and improves passenger comfort while maintaining safety priorities.
 
 ## Project Structure
 
