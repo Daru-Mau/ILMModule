@@ -7,6 +7,7 @@ This guide provides solutions to common issues encountered when working with the
 ### Undefined Reference to Direction Variables
 
 **Error:**
+
 ```
 undefined reference to `leftDir'
 undefined reference to `rightDir'
@@ -17,6 +18,7 @@ undefined reference to `backDir'
 This error occurs when the smooth deceleration system doesn't have access to the motor direction tracking variables. To fix it:
 
 1. Make sure the direction variables are globally defined in `integrated_movement.ino`:
+
    ```cpp
    // Motor direction tracking variables
    Direction leftDir = STOP;  // Direction tracking for left motor
@@ -25,6 +27,7 @@ This error occurs when the smooth deceleration system doesn't have access to the
    ```
 
 2. Add proper extern declarations in `smooth_deceleration.ino`:
+
    ```cpp
    // External declarations for variables from integrated_movement.ino
    extern Direction leftDir;
@@ -47,12 +50,15 @@ This error occurs when the smooth deceleration system doesn't have access to the
 ### Jerky Stops or Missing Deceleration
 
 **Symptoms:**
+
 - Robot stops abruptly instead of gradually
 - Motors whine during stops
 - Direction changes are jarring
 
 **Solution:**
+
 1. Check that `handleSmoothDeceleration()` is being called in the main loop:
+
    ```cpp
    void loop() {
        // Other code...
@@ -62,6 +68,7 @@ This error occurs when the smooth deceleration system doesn't have access to the
    ```
 
 2. Ensure the `stopAllMotors()` function is starting deceleration properly:
+
    ```cpp
    void stopAllMotors() {
        // Start the smooth deceleration process
@@ -86,19 +93,22 @@ This error occurs when the smooth deceleration system doesn't have access to the
 ### Obstacle Avoidance Not Working with Deceleration
 
 **Symptoms:**
+
 - Robot ignores obstacles during deceleration
 - Emergency stops don't function during deceleration
 
 **Solution:**
+
 1. Make sure emergency stop checks occur before deceleration handling:
+
    ```cpp
    void loop() {
        // Check for emergency conditions first
        checkEmergencyStatus();
-       
+
        // Then handle deceleration
        handleSmoothDeceleration();
-       
+
        // Rest of loop...
    }
    ```
@@ -110,9 +120,9 @@ This error occurs when the smooth deceleration system doesn't have access to the
        analogWrite(motorLeft.RPWM, 0);
        analogWrite(motorLeft.LPWM, 0);
        motorLeft.currentSpeed = 0;
-       
+
        // Same for other motors...
-       
+
        // Reset deceleration state
        decelerationActive = false;
    }
@@ -124,6 +134,7 @@ This error occurs when the smooth deceleration system doesn't have access to the
 
 **Solution:**
 Adjust the deceleration rate in `smooth_deceleration.ino`:
+
 ```cpp
 // Increase for faster stops, decrease for smoother stops
 float decelerationRate = 0.15;  // Rate of deceleration (0-1)
