@@ -28,15 +28,22 @@ CMD_STOP = 'STOP'
 CMD_PING = 'PING'
 CMD_SENS = 'SENS'
 CMD_TAG = 'TAG'   # Command for AprilTag tracking with separate distance and speed
+CMD_I2CM = 'I2CM'  # Command for I2C master communication
 
-# Direction codes
-DIR_STOP = 0
-DIR_FORWARD = 1
-DIR_BACKWARD = 2
-DIR_TURN_LEFT = 3
-DIR_TURN_RIGHT = 4
-DIR_ROTATE_LEFT = 5
-DIR_ROTATE_RIGHT = 6
+# Direction codes - aligned with integrated_movement.ino
+DIR_STOP = 0              # Stop all movement
+DIR_FORWARD = 1           # Move forward
+DIR_BACKWARD = 2          # Move backward
+DIR_TURN_LEFT = 3         # Arc turn left (forward while turning)
+DIR_TURN_RIGHT = 4        # Arc turn right (forward while turning)
+DIR_ROTATE_LEFT = 5       # Rotate left in place
+DIR_ROTATE_RIGHT = 6      # Rotate right in place
+DIR_SLIDE_LEFT = 7        # Left lateral movement
+DIR_SLIDE_RIGHT = 8       # Right lateral movement
+DIR_DIAGONAL_FORWARD_LEFT = 9    # Diagonal movement forward-left
+DIR_DIAGONAL_FORWARD_RIGHT = 10  # Diagonal movement forward-right
+DIR_DIAGONAL_BACKWARD_LEFT = 11  # Diagonal movement backward-left
+DIR_DIAGONAL_BACKWARD_RIGHT = 12  # Diagonal movement backward-right
 
 
 def get_direction_name(direction_code: int) -> str:
@@ -48,7 +55,13 @@ def get_direction_name(direction_code: int) -> str:
         DIR_TURN_LEFT: "TURN LEFT",
         DIR_TURN_RIGHT: "TURN RIGHT",
         DIR_ROTATE_LEFT: "ROTATE LEFT",
-        DIR_ROTATE_RIGHT: "ROTATE RIGHT"
+        DIR_ROTATE_RIGHT: "ROTATE RIGHT",
+        DIR_SLIDE_LEFT: "SLIDE LEFT",
+        DIR_SLIDE_RIGHT: "SLIDE RIGHT",
+        DIR_DIAGONAL_FORWARD_LEFT: "DIAGONAL FORWARD-LEFT",
+        DIR_DIAGONAL_FORWARD_RIGHT: "DIAGONAL FORWARD-RIGHT",
+        DIR_DIAGONAL_BACKWARD_LEFT: "DIAGONAL BACKWARD-LEFT",
+        DIR_DIAGONAL_BACKWARD_RIGHT: "DIAGONAL BACKWARD-RIGHT"
     }.get(direction_code, "UNKNOWN")
 
 
@@ -56,10 +69,11 @@ def get_direction_name(direction_code: int) -> str:
 class TagData:
     """Container for movement data from tag tracking"""
     direction: int                # Direction to move (see direction constants)
-    speed: int                    # Desired speed set by Python based on navigation goals 
+    speed: int                    # Desired speed set by Python based on navigation goals
     tag_id: int                   # ID of the AprilTag being tracked
-    distance: float = None        # Physical distance to tag in cm (sent to Arduino for information)
-    timestamp: float = None       # When this command was generated
+    # Physical distance to tag in cm (sent to Arduino for information)
+    distance: Optional[float] = None
+    timestamp: Optional[float] = None  # When this command was generated
 
     def __post_init__(self):
         if self.timestamp is None:
@@ -189,4 +203,70 @@ class UARTCommunicator:
         """
         mode = 1 if use_three_wheels else 0
         command = f"{MSG_START}MODE:{mode}{MSG_END}"
+        return self._send_command(command)
+
+    # Convenience methods for specific movement types
+
+    def move_forward(self, speed: int) -> bool:
+        """Move forward at the specified speed"""
+        return self.send_movement(DIR_FORWARD, speed)
+
+    def move_backward(self, speed: int) -> bool:
+        """Move backward at the specified speed"""
+        return self.send_movement(DIR_BACKWARD, speed)
+
+    def turn_left(self, speed: int) -> bool:
+        """Arc turn left (forward while turning left)"""
+        return self.send_movement(DIR_TURN_LEFT, speed)
+
+    def turn_right(self, speed: int) -> bool:
+        """Arc turn right (forward while turning right)"""
+        return self.send_movement(DIR_TURN_RIGHT, speed)
+
+    def rotate_left(self, speed: int) -> bool:
+        """Rotate left in place"""
+        return self.send_movement(DIR_ROTATE_LEFT, speed)
+
+    def rotate_right(self, speed: int) -> bool:
+        """Rotate right in place"""
+        return self.send_movement(DIR_ROTATE_RIGHT, speed)
+
+    def slide_left(self, speed: int) -> bool:
+        """Slide left (lateral movement)"""
+        return self.send_movement(DIR_SLIDE_LEFT, speed)
+
+    def slide_right(self, speed: int) -> bool:
+        """Slide right (lateral movement)"""
+        return self.send_movement(DIR_SLIDE_RIGHT, speed)
+
+    def diagonal_forward_left(self, speed: int) -> bool:
+        """Move diagonally forward and left"""
+        return self.send_movement(DIR_DIAGONAL_FORWARD_LEFT, speed)
+
+    def diagonal_forward_right(self, speed: int) -> bool:
+        """Move diagonally forward and right"""
+        return self.send_movement(DIR_DIAGONAL_FORWARD_RIGHT, speed)
+
+    def diagonal_backward_left(self, speed: int) -> bool:
+        """Move diagonally backward and left"""
+        return self.send_movement(DIR_DIAGONAL_BACKWARD_LEFT, speed)
+
+    def diagonal_backward_right(self, speed: int) -> bool:
+        """Move diagonally backward and right"""
+        return self.send_movement(DIR_DIAGONAL_BACKWARD_RIGHT, speed)
+
+    def stop(self) -> bool:
+        """Stop all movement"""
+        return self.send_movement(DIR_STOP, 0)
+
+    def send_i2c_command(self, command_code: int) -> bool:
+        """Send an I2C command to the master controller
+
+        Args:
+            command_code: The I2C command code to send
+
+        Returns:
+            bool: True if command was successful, False otherwise
+        """
+        command = f"{MSG_START}{CMD_I2CM}:{command_code}{MSG_END}"
         return self._send_command(command)

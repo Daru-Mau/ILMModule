@@ -1,31 +1,27 @@
-/* // Ultrasonic Sensor Pins - Normal Setting
-#define TRIG_BL 26
-#define ECHO_BL 27
-#define TRIG_B 24
-#define ECHO_B 25
-#define TRIG_BR 28
-#define ECHO_BR 29
-#define TRIG_FR 34
-#define ECHO_FR 35 
-#define TRIG_F 32
-#define ECHO_F 33
-#define TRIG_FL 30
-#define ECHO_FL 31 
-*/
+// Ultrasonic sensor pins
+// FRONT sensor
+#define TRIG_FRONT 22
+#define ECHO_FRONT 23
 
-// Ultrasonic Sensor Pins - Rotated Front
-#define TRIG_F 28   
-#define ECHO_F 29   
-#define TRIG_FL 34  
-#define ECHO_FL 35  
-#define TRIG_FR 24  
-#define ECHO_FR 25  
-#define TRIG_BL 32 
-#define ECHO_BL 33  
-#define TRIG_B 30   
-#define ECHO_B 31   
-#define TRIG_BR 26  
-#define ECHO_BR 27  
+// FRONT-LEFT sensor
+#define TRIG_FRONT_LEFT 24
+#define ECHO_FRONT_LEFT 25
+
+// FRONT-RIGHT sensor
+#define TRIG_FRONT_RIGHT 26
+#define ECHO_FRONT_RIGHT 27
+
+// LEFT sensor
+#define TRIG_LEFT 28
+#define ECHO_LEFT 29
+
+// RIGHT sensor
+#define TRIG_RIGHT 30
+#define ECHO_RIGHT 31
+
+// REAR sensor
+#define TRIG_REAR 32
+#define ECHO_REAR 33
 
 // Test Configuration
 #define MAX_DISTANCE 400    // Maximum reliable reading distance in cm
@@ -41,12 +37,12 @@ struct UltrasonicSensor
 };
 
 // Define sensors
-const UltrasonicSensor frontSensor = {TRIG_F, ECHO_F, "Front"};
-const UltrasonicSensor frontLeftSensor = {TRIG_FL, ECHO_FL, "Front-Left"};
-const UltrasonicSensor frontRightSensor = {TRIG_FR, ECHO_FR, "Front-Right"};
-const UltrasonicSensor backLeftSensor = {TRIG_BL, ECHO_BL, "Back-Left"};
-const UltrasonicSensor backSensor = {TRIG_B, ECHO_B, "Back"};
-const UltrasonicSensor backRightSensor = {TRIG_BR, ECHO_BR, "Back-Right"};
+const UltrasonicSensor frontSensor = {TRIG_FRONT, ECHO_FRONT, "Front"};
+const UltrasonicSensor frontLeftSensor = {TRIG_FRONT_LEFT, ECHO_FRONT_LEFT, "Front-Left"};
+const UltrasonicSensor frontRightSensor = {TRIG_FRONT_RIGHT, ECHO_FRONT_RIGHT, "Front-Right"};
+const UltrasonicSensor leftSensor = {TRIG_LEFT, ECHO_LEFT, "Left"};
+const UltrasonicSensor rightSensor = {TRIG_RIGHT, ECHO_RIGHT, "Right"};
+const UltrasonicSensor rearSensor = {TRIG_REAR, ECHO_REAR, "Rear"};
 
 void setupSensorPins(const UltrasonicSensor &sensor)
 {
@@ -79,9 +75,9 @@ void setup()
     setupSensorPins(frontSensor);
     setupSensorPins(frontLeftSensor);
     setupSensorPins(frontRightSensor);
-    setupSensorPins(backLeftSensor);
-    setupSensorPins(backRightSensor);
-    setupSensorPins(backSensor);
+    setupSensorPins(leftSensor);
+    setupSensorPins(rightSensor);
+    setupSensorPins(rearSensor);
 
     Serial.println("===============================");
     Serial.println("Ultrasonic Sensors Testing System");
@@ -97,7 +93,7 @@ void setup()
 void testIndividualSensors()
 {
     const UltrasonicSensor *sensors[] = {&frontSensor, &frontLeftSensor, &frontRightSensor,
-                                         &backLeftSensor, &backRightSensor, &backSensor};
+                                         &leftSensor, &rightSensor, &rearSensor};
 
     Serial.println(F("\n=== Testing Individual Sensors ==="));
 
@@ -125,7 +121,7 @@ void testIndividualSensors()
 void testAllSensorsContinuously()
 {
     const UltrasonicSensor *sensors[] = {&frontSensor, &frontLeftSensor, &frontRightSensor,
-                                         &backLeftSensor, &backRightSensor, &backSensor};
+                                         &leftSensor, &rightSensor, &rearSensor};
 
     Serial.println("\n=== All Sensors Reading ===");
 
@@ -156,7 +152,7 @@ void testAllSensorsContinuously()
 void testProximityWarnings()
 {
     const UltrasonicSensor *sensors[] = {&frontSensor, &frontLeftSensor, &frontRightSensor,
-                                         &backLeftSensor, &backRightSensor, &backSensor};
+                                         &leftSensor, &rightSensor, &rearSensor};
 
     Serial.println("\n=== Proximity Warnings Test ===");
     bool warningDetected = false;
@@ -182,7 +178,7 @@ void testProximityWarnings()
 void testSensorReliability()
 {
     const UltrasonicSensor *sensors[] = {&frontSensor, &frontLeftSensor, &frontRightSensor,
-                                         &backLeftSensor, &backRightSensor, &backSensor};
+                                         &leftSensor, &rightSensor, &rearSensor};
 
     Serial.println("\n=== Sensor Reliability Test ===");
 

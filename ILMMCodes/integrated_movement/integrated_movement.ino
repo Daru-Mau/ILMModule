@@ -177,18 +177,6 @@ struct Motor
 #define TRIG_BR 26
 #define ECHO_BR 27
 
-// === Lighting Pin Definition ===
-#define THUNDER_LED_PIN 36 // THUNDER LED PIN
-
-#define NUM_THUNDERPIXEL 50 // NeoPixel thunder
-
-#define VERTICAL_LED_PIN_1 37 // VERTICAL LED PIN 1
-#define VERTICAL_LED_PIN_2 38 // VERTICAL LED PIN 2
-#define VERTICAL_LED_PIN_3 39 // VERTICAL LED PIN 3
-
-#define NUM_VERTICALPIXEL 20 // NeoPixel vertical
-#define NUM_VERTICAL_STRIP 3 // Vertical Strip number
-
 // === Enhanced Configuration ===
 const float CRITICAL_DISTANCE = 15.0;  // Emergency stop distance (cm)
 const float SLOW_DOWN_DISTANCE = 30.0; // Start slowing down distance (cm)
@@ -921,30 +909,6 @@ void checkOverridePin()
 
 void setup()
 {
-    led_color.red = 181;
-    led_color.green = 200;
-    led_color.blue = 200;
-    led_color.brightness = 255;
-
-    thunder_pixels.begin();
-    thunder_pixels.setBrightness(255);
-    thunder_pixels.show();
-    thunder_pixels.clear();
-
-    for (int i = 0; i < thunder_pixels.numPixels(); ++i)
-    {
-        thunder_pixels.setPixelColor(i, thunder_pixels.Color(led_color.red, led_color.green, led_color.blue));
-        thunder_pixels.show();
-    }
-
-    for (int i = 0; i < NUM_VERTICAL_STRIP; ++i)
-    {
-        vertical_pixels[i].begin();
-        vertical_pixels[i].setBrightness(255);
-        vertical_pixels[i].show();
-        vertical_pixels[i].clear();
-    }
-
     // Clear any existing serial data
     Serial.end();
     delay(100);
@@ -1492,6 +1456,7 @@ void moveDiagonalBackwardRight(int speed)
         moveMotor(motorBack, STOP, 0); // Back wheel disabled in 2-wheel mode
     }
 }
+
 void loop()
 {
     // ==== Check if master override is active (via pin or I2C) ====
@@ -2322,76 +2287,4 @@ void parseCommand(const char *cmd)
     Serial.print("<ERR:Unknown command ");
     Serial.print(command);
     Serial.println(">");
-}
-
-// Functions to control the LEDS
-void verticalEffect()
-{
-    for (int i = 0; i < NUM_VERTICALPIXEL; ++i)
-    {
-        for (int j = 0; j < NUM_VERTICAL_STRIP; ++j)
-        {
-            vertical_pixels[j].setPixelColor(i, vertical_pixels[i].Color(led_color.red, led_color.green, led_color.blue));
-            vertical_pixels[j].show();
-        }
-
-        delay(DELAYVAL);
-    }
-
-    for (int i = 0; i < NUM_VERTICALPIXEL; ++i)
-    {
-        for (int j = 0; j < NUM_VERTICAL_STRIP; ++j)
-        {
-            vertical_pixels[j].setPixelColor(i, vertical_pixels[i].Color(0, 0, 0));
-            vertical_pixels[j].show();
-        }
-
-        delay(DELAYVAL);
-    }
-}
-
-void thunderEffect()
-{
-    uint32_t color = thunder_pixels.Color(led_color.red, led_color.green, led_color.blue);
-
-    int flashBrightness = 255;
-
-    // number of flashes
-    int flashCount = random(5, 15);
-    // flash white brightness range - 0-255
-    int flashBrightnessMin = 5;
-    int flashBrightnessMax = 255;
-    // flash duration range - ms
-    int flashDurationMin = 5;
-    int flashDurationMax = 75;
-    // flash off range - ms
-    int flashOffsetMin = 0;
-    int flashOffsetMax = 75;
-    // time to next flash range - ms
-    int nextFlashDelayMin = 1;
-    int nextFlashDelayMax = 50;
-
-    {
-        int thunder_led_start = getRandomValueOrZero(0, NUM_THUNDERPIXEL);
-        int thunder_led_end = getRandomValueOrZero(thunder_led_start, NUM_THUNDERPIXEL);
-        thunder_pixels.fill(color, thunder_led_start, thunder_led_end);
-        thunder_pixels.show();
-        delay(random(flashOffsetMin, flashOffsetMax));
-    }
-
-    thunder_pixels.clear();
-    thunder_pixels.show();
-    delay(random(nextFlashDelayMin, nextFlashDelayMax));
-}
-
-int getRandomValueOrZero(int min, int max)
-{
-    int rnd_val = random(min, max);
-
-    if (rnd_val < 0)
-    {
-        return 0;
-    }
-
-    return rnd_val;
 }

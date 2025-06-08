@@ -7,24 +7,25 @@ This system integrates the AprilTag recognition system with UART communication f
 - **Message framing** with start/end markers for reliable communication
 - **Command acknowledgment** to ensure commands are received
 - **Auto-detection** of Arduino serial ports
-- **Standardized direction codes** (0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT)
+- **Standardized direction codes** (0=STOP, 1=FORWARD, 2=BACKWARD, 3=LEFT, 4=RIGHT, 5=ROTATE LEFT, 6=ROTATE RIGHT)
 - **Enhanced error handling** with retries and timeouts
 - **Direct motor control** capabilities
 - **Sensor data retrieval** from ultrasonic sensors
+- **I2C integration** with master controller for coordination
 
 ## Available Scripts
 
 ### Main Scripts
 
-- **`apriltag_recognition.py`**: Main AprilTag detection and robot control script (updated to use UART)
-- **`apriltag_uart_controller.py`**: Alternative implementation with additional features
+- **`apriltag_uart_controller.py`**: Main AprilTag detection and robot control script with comprehensive features
 - **`uart_communication.py`**: The UART communication library
-- **`test_apriltag_uart.py`**: Test script for UART communication without camera
+- **`communication_test.py`**: Test script for UART communication
+- **`camera_apriltag_test.py`**: Test script for AprilTag detection without robot control
+- **`monitor_sensor_data_fixed.py`**: Script for real-time sensor monitoring
 
 ### Launcher Scripts
 
-- **`launch_apriltag_uart.py`**: Launcher for the main AprilTag recognition system
-- **`launch_apriltag_controller.py`**: Launcher for the alternative controller implementation
+- **`launch_apriltag_controller.py`**: Main launcher for the AprilTag controller with configuration options
 
 ## How to Use
 
@@ -56,13 +57,21 @@ python launch_apriltag_uart.py --verbose
 
 ## Direction Codes
 
-The system uses standardized direction codes for movement:
+The system uses standardized direction codes for omnidirectional movement:
 
 - **0 (DIR_STOP)**: Stop movement
 - **1 (DIR_FORWARD)**: Move forward
 - **2 (DIR_BACKWARD)**: Move backward
-- **3 (DIR_LEFT)**: Turn left
-- **4 (DIR_RIGHT)**: Turn right
+- **3 (DIR_TURN_LEFT)**: Arc turn left
+- **4 (DIR_TURN_RIGHT)**: Arc turn right
+- **5 (DIR_ROTATE_LEFT)**: Rotate left in place
+- **6 (DIR_ROTATE_RIGHT)**: Rotate right in place
+- **7 (DIR_SLIDE_LEFT)**: Lateral movement to the left
+- **8 (DIR_SLIDE_RIGHT)**: Lateral movement to the right
+- **9 (DIR_DIAGONAL_FORWARD_LEFT)**: Diagonal movement forward-left
+- **10 (DIR_DIAGONAL_FORWARD_RIGHT)**: Diagonal movement forward-right
+- **11 (DIR_DIAGONAL_BACKWARD_LEFT)**: Diagonal movement backward-left
+- **12 (DIR_DIAGONAL_BACKWARD_RIGHT)**: Diagonal movement backward-right
 
 ## Arduino Integration
 

@@ -1,6 +1,6 @@
-# Localization Module (LMModule)
+# Localization and Movement Module (ILMModule)
 
-A robust localization and navigation system for an omnidirectional robot featuring AprilTag-based positioning, sensor fusion, and advanced movement control with UART communication.
+A robust localization and navigation system for an omnidirectional robot featuring AprilTag-based positioning, sensor fusion, I2C coordination, and advanced movement control with UART communication.
 
 ## Features
 
@@ -10,6 +10,7 @@ A robust localization and navigation system for an omnidirectional robot featuri
   - Smooth acceleration and deceleration with direction preservation
   - Precise position and orientation control
   - Maximum safe speed: 0.5 m/s
+  - Six distinct movement types including rotation in place
 
 - **Advanced Localization**
 
@@ -19,20 +20,23 @@ A robust localization and navigation system for an omnidirectional robot featuri
   - AprilTag-based absolute positioning
   - Position accuracy: ±5mm in controlled conditions
   - Heading accuracy: ±2 degrees with IMU fusion
+  - Real-time positioning feedback with distance-based control
 
 - **Multiple Operation Modes**
 
-  - Manual control
-  - Autonomous navigation
-  - AprilTag following
+  - Manual control via direct commands
+  - Autonomous navigation with path planning
+  - AprilTag following with distance control
   - Automated docking/charging
   - Emergency stop functionality
+  - I2C coordination with master module
 
 - **Obstacle Detection**
   - 6x HC-SR04 ultrasonic sensors
-  - Real-time obstacle avoidance
+  - Real-time obstacle avoidance with configurable thresholds
   - Social navigation features
   - Multi-level safety checks
+  - Dynamic speed adjustment based on obstacle proximity
 
 ## System Architecture
 
@@ -41,45 +45,70 @@ A robust localization and navigation system for an omnidirectional robot featuri
 - 3x JGB37-520 Encoder DC motors (178 RPM, 1.8 Nm torque)
 - 3x BTS7960 43A H-bridge motor drivers
 - 6x HC-SR04 ultrasonic sensors
-- MPU6050 IMU
-- Raspberry Pi (for vision processing)
-- Elegoo Mega (for motor control and sensor fusion)
+- MPU6050 IMU for orientation tracking
+- Raspberry Pi 4 (for vision processing & high-level control)
+- Elegoo Mega 2560 (for motor control and sensor fusion)
 
 ### Software Components
 
 1. **AprilTag Recognition (Python)**
 
-   - Camera-based tag detection using OpenCV
-   - Real-time pose estimation
-   - 30 FPS detection rate
+   - Camera-based tag detection using OpenCV and pupil_apriltags
+   - Real-time pose estimation and distance calculation
+   - 30 FPS detection rate with optimization
+   - Support for multiple tag families and sizes
 
-2. **Communication Layer (Python)**
+2. **UART Communication Layer (Python)**
 
    - High-speed serial protocol (115200 baud)
+   - Message framing with start/end markers
    - Error handling and retry mechanisms
    - Standardized message formats
+   - Auto-detection of serial ports
 
 3. **Localization System (Arduino)**
 
-   - Encoder-based odometry
-   - IMU data integration
+   - Encoder-based odometry with high precision
+   - IMU data integration for heading correction
    - Position and orientation tracking
    - 20Hz control loop frequency
+   - I2C slave capability for master coordination
 
 4. **Movement Control (Arduino)**
-   - Fine-grained motor control
-   - Dynamic speed adjustment
-   - Obstacle avoidance logic
+   - Fine-grained motor control with PWM
+   - Dynamic speed adjustment based on conditions
+   - Advanced obstacle avoidance logic
+   - Smooth deceleration system
    - Emergency stop handling
 
 ## Communication Protocol
 
-### Message Formats
+### UART Message Formats
 
-- Tag Detection: `TAG:id,x,y,yaw`
-- Position Updates: `POS:x,y,theta`
-- Clear Tag Data: `CLEAR`
-- Control Commands: Single characters ('M', 'T', 'S', 'R')
+- Tag Data: `<TAG:id,distance,direction>`
+- Movement Command: `<MOVE:direction,speed>`
+- Direct Motor Control: `<MCTL:left_speed,right_speed,back_speed>`
+- Speed Setting: `<SPEED:max_speed,min_speed>`
+- Sensor Request: `<SENS>`
+- Connection Test: `<PING>`
+- Stop Command: `<STOP>`
+- I2C Master Command: `<I2CM:command>`
+
+### Direction Codes
+
+- `0` = STOP
+- `1` = FORWARD
+- `2` = BACKWARD
+- `3` = LEFT (Arc turn)
+- `4` = RIGHT (Arc turn)
+- `5` = ROTATE LEFT (in place)
+- `6` = ROTATE RIGHT (in place)
+- `7` = SLIDE LEFT (lateral)
+- `8` = SLIDE RIGHT (lateral)
+- `9` = DIAGONAL FORWARD-LEFT
+- `10` = DIAGONAL FORWARD-RIGHT
+- `11` = DIAGONAL BACKWARD-LEFT
+- `12` = DIAGONAL BACKWARD-RIGHT
 
 ## Getting Started
 
@@ -87,8 +116,8 @@ A robust localization and navigation system for an omnidirectional robot featuri
 
    - Connect motors to the BTS7960 drivers
    - Wire ultrasonic sensors to specified pins
-   - Connect MPU6050 via I2C
-   - Establish serial connection between Raspberry Pi and Arduino
+   - Connect MPU6050 via I2C to Arduino
+   - Establish USB serial connection between Raspberry Pi and Arduino
 
 2. **Software Installation**
 
@@ -96,10 +125,32 @@ A robust localization and navigation system for an omnidirectional robot featuri
      ```
      pip install -r requirements.txt
      ```
-   - Upload appropriate Arduino code to the Mega
-   - Calibrate sensors using built-in calibration routines
+   - Upload `integrated_movement.ino` to the Arduino Mega
+   - Run camera calibration if needed:
+     ```
+     python camera_apriltag_test.py --calibrate
+     ```
+   - Test communication:
+     ```
+     python communication_test.py
+     ```
 
-3. **Testing**
+3. **Running the System**
+
+   - Start the main controller:
+     ```
+     python launch_apriltag_controller.py
+     ```
+   - For monitoring sensor data:
+     ```
+     python monitor_sensor_data_fixed.py
+     ```
+   - For manual motor testing:
+     ```
+     python motor_test.py
+     ```
+
+4. **Testing**
    - Run individual component tests using `Testing_Motors/Testing_Motors.ino` and `Testing_Sensors/Testing_Sensors.ino`
    - Verify sensor readings and motor operation
    - Check AprilTag detection accuracy with `test_apriltag_uart.py`
