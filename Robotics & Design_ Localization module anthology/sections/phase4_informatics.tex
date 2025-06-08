@@ -1,0 +1,35 @@
+\subsection{Informatics}
+
+The software architecture of the robot is designed around a modular, state-driven approach that enables clear separation of concerns while maintaining flexibility for future expansion. The core of the system is organized as a comprehensive control class that manages different operating modes and behaviors.
+
+\subsubsection{Architecture}
+
+Our final implementation follows an object-oriented design with a main \texttt{RobotController} class that encapsulates:
+
+\begin{itemize}
+    \item \textbf{Operation modes}: Manual control, autonomous navigation, tag following, and charging modes that can be dynamically switched via commands
+    
+    \item \textbf{Sensor management}: Centralizing the reading and processing of ultrasonic sensors, encoders, and camera input
+    
+    \item \textbf{Motion control}: Implementing the omnidirectional movement algorithms, with functions for moving in any direction and orientation
+    
+    \item \textbf{State machine}: Handling transitions between different behaviors based on environmental conditions and user commands
+\end{itemize}
+
+The controller runs at a fixed update frequency of 20Hz, ensuring consistent response times while balancing processing requirements.
+
+\subsubsection{Key Software Features}
+
+\begin{itemize}
+    \item \textbf{Obstacle avoidance}: The robot dynamically adjusts its path when sensors detect obstacles, selecting the best direction to navigate around them
+    
+    \item \textbf{AprilTag detection}: Using camera input, the robot can identify and track special visual markers for navigation and charging station docking
+    
+    \item \textbf{Serial interface}: A simple text-based protocol allows external control and monitoring through standard serial communication
+    
+    \item \textbf{Sensor fusion}: Basic algorithms combine encoder and sensor data to maintain a more accurate position estimate during movement
+    
+    \item \textbf{Emergency stop}: Safety features that can immediately halt all operations if unexpected conditions are detected
+\end{itemize}
+
+The code is structured to maintain readability and maintainability, with clear function naming and organization. This approach facilitates both understanding of the current implementation and future extensions as new features are added to the robot.

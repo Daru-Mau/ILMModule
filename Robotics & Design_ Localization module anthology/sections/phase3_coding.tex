@@ -1,0 +1,18 @@
+\subsection{Coding}
+
+During the development phase, we focused on implementing and validating the full control system for the robot. The process began with an \textbf{alpha testing program} (available in the annex), designed to test each subsystem independently—motors, sensors, encoders, and AprilTag detection—before integrating them into a unified control architecture.
+
+In this first version, we structured the tests as \textbf{modular routines}, enabling selective testing of each component. This helped verify that the motors responded to PWM signals correctly, the ultrasonic sensors provided consistent readings, and the encoder data could be read and interpreted reliably. These tests were crucial to ensure that hardware and wiring were functioning as expected.
+
+Once individual components were validated, we moved on to the \textbf{final implementation} of the control system. The core of the system is organized as a \textbf{state-driven architecture}, with multiple operation modes:
+
+\begin{itemize}
+    \item \textbf{Manual mode}, which receives velocity commands over serial communication for direct control.
+    \item \textbf{Autonomous mode}, in which the robot patrols predefined paths while avoiding obstacles.
+    \item \textbf{Tag following mode}, where it adjusts its motion based on the position of a detected AprilTag.
+    \item \textbf{Charging mode}, which guides the robot toward a docking station when low battery is detected.
+\end{itemize}
+
+Each mode encapsulates its own logic and can be triggered via commands, making the system modular and easy to expand. Additionally, a \textbf{20Hz control loop} manages sensor updates, decision-making, and movement commands, maintaining responsive and consistent behavior.
+
+This structure has proven reliable in testing, with smooth transitions between modes and stable behavior in autonomous operation. Full implementation details and source code are available in the \textbf{annex} of this report.
