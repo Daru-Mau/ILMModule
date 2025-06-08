@@ -1,0 +1,27 @@
+\subsection{Coding}
+
+The code developed so far focuses on the core functionalities of the movement module: patrolling the environment, stopping periodically for interaction, and returning to a charging station when battery levels are low. The code is being developed in C++, using the Arduino framework, since it offers:
+
+\begin{itemize}
+    \item High compatibility with our chosen microcontroller (ATmega328P).
+    \item Access to well-documented libraries for motor control, timers, and sensors.
+    \item A simple structure that facilitates rapid prototyping and debugging.
+\end{itemize}
+
+The microcontroller is programmed directly via the Arduino IDE, allowing us to flash and test code iterations easily. The robot can switch between various behaviors such as:
+
+\begin{itemize}
+    \item Patrolling predefined points.
+    \item Stopping and waiting for user interaction.
+    \item Navigating to the charging station when the battery is low.
+\end{itemize}
+
+In this phase, we focused on:
+
+\begin{itemize}
+    \item Defining key states and transitions.
+    \item Mapping out which pins control each motor and sensor.
+    \item Testing the motors and sensors.
+\end{itemize}
+
+The code used for the testing of the HC-SR04 ultrasonic sensors, and the motors can be seen in the Appendix.

@@ -1,0 +1,18 @@
+\subsection{Omnidirectional Movement Approach}
+
+For the movement and localization module of the indoor robot, an \textbf{omnidirectional movement} approach has been selected. This strategy enables the robot to move seamlessly in any direction without the need to rotate its chassis first. Typically implemented using omni-wheels or mecanum wheels, omnidirectional systems are particularly advantageous in constrained and dynamic indoor environments. However, this choice also comes with certain trade-offs.
+
+\begin{itemize}
+    \item \textbf{Enhanced Manoeuvrability:} Omnidirectional movement allows for instant lateral, diagonal or rotational motion. This is highly beneficial in tight spaces or crowded indoor environments where flexibility is critical.
+    \item \textbf{Simplified Path Planning:} Since the robot can move in any direction at any time, path planning algorithms can be more straightforward compared to traditional differential drive systems, reducing complexity in navigation.
+    \item \textbf{Improved Positioning Accuracy:} Fine adjustments to the robot's position and orientation are easier, which is crucial for tasks that demand high precision, such as docking, object manipulation or alignment tasks.
+    \item \textbf{Smooth Obstacle Avoidance:} The ability to sidestep obstacles without complex turning manoeuvres leads to smoother and often faster responses in dynamic environments.
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+    \item \textbf{Mechanical Complexity:} Omni-wheels and their assemblies are more mechanically intricate than standard wheels, potentially leading to higher manufacturing costs and increased maintenance needs.
+    \item \textbf{Lower Traction and Load Capacity:} Due to the design of omni-wheels (which often rely on small rollers), they typically offer less traction and may struggle on uneven surfaces, affecting stability and limiting the robot's carrying capacity.
+    \item \textbf{Energy Efficiency:} Omnidirectional systems can be less energy-efficient, especially during complex movement patterns, leading to increased power consumption.
+    \item \textbf{Control Challenges:} Maintaining accurate and stable movement requires more sophisticated control algorithms. Wheel slip and small errors in motion can accumulate, potentially affecting localization accuracy if not properly managed.
+\end{itemize}

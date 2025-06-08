@@ -1,0 +1,15 @@
+\subsection{Electronics}
+
+The design of the electronics during the development phase was guided by the functional needs of the movement module. At this stage, we focused on defining a system that would enable \textbf{precise motor control}, allow for \textbf{basic sensing capabilities}, and remain \textbf{modular and scalable} for future upgrades.
+
+Given that the robot needed to move holonomically using \textbf{three omnidirectional wheels}, it was essential to control \textbf{three independent DC motors} with precision. This required a microcontroller with multiple PWM-capable digital outputs and a structure that allowed us to drive each motor bidirectionally. We selected the \textbf{ATmega328P} microcontroller, due to its compatibility with the Arduino platform, which offered a familiar programming environment, low-level control, and access to a wide library of tested code.
+
+To drive the motors, we needed reliable motor drivers that could handle the current demand and support direction and speed control. We opted for \textbf{DRV8871 single-channel H-bridge drivers}, one for each motor. These components provided sufficient current capacity, protection features, and a straightforward interface with the \textbf{ATmega328P}, using two digital pins per driver.
+
+In addition to movement, the robot needed a basic level of \textbf{obstacle detection} to eventually navigate or stop when required. For this, we planned the integration of \textbf{ultrasonic sensors (HC-SR04)} around the perimeter. These sensors are simple, affordable, and widely used in robotics, but they require careful timing to avoid interference between readings. The ATmega328P offered enough GPIOs to connect up to six sensors, with logic implemented to trigger them sequentially.
+
+All components would be powered by a \textbf{LiPo battery}, but since the system needed a stable 5V supply for both logic-level components and sensor operation, we included a \textbf{step-down voltage regulator (LM2596)} in the plan. This ensured consistent voltage despite the battery's natural variation underload.
+
+From a wiring and assembly perspective, we anticipated the need to route motor cables and sensor wires efficiently between the top and bottom of the chassis. This led us to consider a vertical layout, with the \textbf{motor drivers placed near the motors} (on the bottom of the base), and the \textbf{microcontroller and logic-level components mounted on top}, minimizing wire length and simplifying troubleshooting.
+
+In short, the electronics defined in this phase were selected not just for their individual performance, but for their ability to \textbf{integrate seamlessly} within a compact, layered robot structure, and support \textbf{clear, testable behaviors} during the next implementation stages.
