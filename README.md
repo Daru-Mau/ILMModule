@@ -16,10 +16,8 @@ A robust localization and navigation system for an omnidirectional robot featuri
 
   - Sensor fusion from multiple sources
   - High-resolution encoder readings (1120 ticks/revolution)
-  - IMU integration for improved heading estimation
   - AprilTag-based absolute positioning
   - Position accuracy: ±5mm in controlled conditions
-  - Heading accuracy: ±2 degrees with IMU fusion
   - Real-time positioning feedback with distance-based control
 
 - **Multiple Operation Modes**
@@ -45,7 +43,6 @@ A robust localization and navigation system for an omnidirectional robot featuri
 - 3x JGB37-520 Encoder DC motors (178 RPM, 1.8 Nm torque)
 - 3x BTS7960 43A H-bridge motor drivers
 - 6x HC-SR04 ultrasonic sensors
-- MPU6050 IMU for orientation tracking
 - Raspberry Pi 4 (for vision processing & high-level control)
 - Elegoo Mega 2560 (for motor control and sensor fusion)
 
@@ -69,7 +66,6 @@ A robust localization and navigation system for an omnidirectional robot featuri
 3. **Localization System (Arduino)**
 
    - Encoder-based odometry with high precision
-   - IMU data integration for heading correction
    - Position and orientation tracking
    - 20Hz control loop frequency
    - I2C slave capability for master coordination
@@ -116,7 +112,6 @@ A robust localization and navigation system for an omnidirectional robot featuri
 
    - Connect motors to the BTS7960 drivers
    - Wire ultrasonic sensors to specified pins
-   - Connect MPU6050 via I2C to Arduino
    - Establish USB serial connection between Raspberry Pi and Arduino
 
 2. **Software Installation**
